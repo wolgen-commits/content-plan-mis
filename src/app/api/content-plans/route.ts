@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ message: error.message }, { status: 422 });
 
   if (tasks?.length) {
-    await db.from('content_plan_tasks').insert(
+    const { data: insertedTasks } = await db.from('content_plan_tasks').insert(
       tasks.map((t: { name: string; deadline: string; pic?: string; pic_user_id?: string; reference?: string; description?: string }) => ({
         content_plan_id: plan.id,
         name: t.name,
@@ -85,7 +85,19 @@ export async function POST(request: NextRequest) {
         reference: t.reference || null,
         description: t.description || null,
       }))
-    );
+    ).select('id');
+
+    if (insertedTasks?.length) {
+      await db.from('content_plan_task_logs').insert(
+        insertedTasks.map((t: { id: string }) => ({
+          task_id:    t.id,
+          event_type: 'created',
+          notes:      null,
+          actor_id:   user.id,
+          actor_name: user.name,
+        }))
+      );
+    }
 
     const { sendNotifications } = await import('@/lib/notifications');
     const taskPicIds = tasks

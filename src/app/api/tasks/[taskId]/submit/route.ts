@@ -5,10 +5,10 @@ import { sendNotifications } from '@/lib/notifications';
 import { format } from 'date-fns';
 
 function buildStoragePath(role: string, fileName: string): string {
-  const folder   = role === 'videographer' ? 'video' : 'design';
-  const now      = new Date();
-  const yearMonth = format(now, 'yyyy-MMM').toUpperCase(); // e.g. 2026-JUN
-  const day       = format(now, 'dd');                     // e.g. 26
+  const folder    = role === 'videographer' ? 'video' : 'design';
+  const now       = new Date();
+  const yearMonth = format(now, 'yyyy-MMM').toUpperCase();
+  const day       = format(now, 'dd');
   const ext       = fileName.split('.').pop() ?? 'bin';
   const unique    = `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
   return `${folder}/${yearMonth}/${day}/RAW/${unique}.${ext}`;
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { taskId: str
 
   const { data: task } = await db
     .from('content_plan_tasks')
-    .select('id, name, pic_user_id, content_plan_id, status, content_plan:content_plans!content_plan_id(id, title, created_by)')
+    .select('id, name, pic_user_id, content_plan_id, status, submit_count, content_plan:content_plans!content_plan_id(id, title, created_by)')
     .eq('id', params.taskId)
     .single();
 
@@ -58,8 +58,11 @@ export async function POST(req: NextRequest, { params }: { params: { taskId: str
     storage_path = path;
   }
 
+  const newSubmitCount = (task.submit_count ?? 0) + 1;
+
   const { error } = await db.from('content_plan_tasks').update({
     status: 'submitted',
+    submit_count: newSubmitCount,
     file_url,
     file_name,
     storage_path,
@@ -69,13 +72,22 @@ export async function POST(req: NextRequest, { params }: { params: { taskId: str
 
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
 
-  // Notif ke pembuat plan
+  // Insert log
+  await db.from('content_plan_task_logs').insert({
+    task_id:      params.taskId,
+    event_type:   'submitted',
+    event_number: newSubmitCount,
+    notes:        notes || null,
+    actor_id:     user.id,
+    actor_name:   user.name,
+  });
+
   const plan = task.content_plan as unknown as { id: string; title: string; created_by: string } | null;
   if (plan?.created_by) {
     await sendNotifications({
       userIds: [plan.created_by],
       type: 'task_submitted',
-      message: `${user.name} telah submit task "${task.name}" pada plan "${plan.title}"`,
+      message: `${user.name} telah submit task "${task.name}" (Submit #${newSubmitCount}) pada plan "${plan.title}"`,
       contentPlanId: plan.id,
     });
   }

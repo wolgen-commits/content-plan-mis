@@ -397,13 +397,35 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
   );
 }
 
-/* ── Task status helpers ── */
-const TASK_STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  pending:   { bg: 'bg-gray-100',    text: 'text-gray-600',    label: 'Belum Dikerjakan' },
-  submitted: { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Menunggu Persetujuan' },
-  done:      { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Selesai' },
-  rejected:  { bg: 'bg-red-100',     text: 'text-red-600',     label: 'Ditolak' },
-};
+/* ── WIB formatter ── */
+function fmtWIB(d: string | null | undefined): string | null {
+  if (!d) return null;
+  try {
+    const s = new Date(d).toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      hour12: false,
+    });
+    return s.replace(/\./g, ':') + ' WIB';
+  } catch { return d; }
+}
+
+/* ── Task status badge (dynamic) ── */
+interface TaskBadge { label: string; bg: string; text: string; dot: string }
+function getTaskBadge(status: string, submitCount: number, revisionCount: number): TaskBadge {
+  if (status === 'done') {
+    return { label: 'Disetujui', bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' };
+  }
+  if (status === 'submitted') {
+    const n = submitCount > 0 ? submitCount : 1;
+    return { label: `Diajukan #${n}`, bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' };
+  }
+  if (status === 'pending' && revisionCount > 0) {
+    return { label: `Perlu Revisi #${revisionCount}`, bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-400' };
+  }
+  return { label: 'Belum Dikerjakan', bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-400' };
+}
 
 interface TaskRow {
   id: string;
@@ -412,6 +434,8 @@ interface TaskRow {
   pic: string | null;
   pic_user_id: string | null;
   status: string;
+  submit_count: number;
+  revision_count: number;
   file_url: string | null;
   file_name: string | null;
   submission_notes: string | null;
@@ -422,83 +446,120 @@ interface TaskRow {
 }
 
 /* ── Task history modal ── */
-function TaskHistoryModal({ task, onClose }: { task: TaskRow; onClose: () => void }) {
-  const fmtDt = (d: string | null) => {
-    if (!d) return null;
-    return format(new Date(d), 'dd MMM yyyy, HH:mm');
-  };
+interface TaskLog {
+  id: string;
+  event_type: 'created' | 'submitted' | 'revision_requested' | 'approved';
+  event_number: number | null;
+  notes: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
 
-  const events: { label: string; time: string | null; color: string; icon: React.ReactNode; note?: string }[] = [
-    {
-      label: 'Task Dibuat',
-      time: fmtDt(task.created_at),
-      color: 'bg-blue-500',
-      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+const LOG_META: Record<string, { label: (n?: number | null) => string; color: string; icon: React.ReactNode }> = {
+  created: {
+    label: () => 'Task Dibuat',
+    color: 'bg-blue-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,
+  },
+  submitted: {
+    label: (n) => `Submit #${n ?? 1}`,
+    color: 'bg-amber-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
+  },
+  revision_requested: {
+    label: (n) => `Revisi #${n ?? 1}`,
+    color: 'bg-orange-400',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  },
+  approved: {
+    label: () => 'Disetujui',
+    color: 'bg-emerald-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  },
+};
+
+function TaskHistoryModal({ task, onClose }: { task: TaskRow; onClose: () => void }) {
+  const { data: logs = [], isLoading } = useQuery<TaskLog[]>({
+    queryKey: ['task-logs', task.id],
+    queryFn: async () => {
+      const supabase = getSupabaseBrowser();
+      const { data } = await supabase
+        .from('content_plan_task_logs')
+        .select('id, event_type, event_number, notes, actor_name, created_at')
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: true });
+      return (data ?? []) as TaskLog[];
     },
-    {
-      label: 'Disubmit',
-      time: fmtDt(task.submitted_at),
-      color: task.submitted_at ? 'bg-amber-500' : 'bg-gray-300',
-      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
-      note: task.submitted_at && task.submission_notes ? task.submission_notes : undefined,
-    },
-    ...(task.status === 'pending' && task.submission_notes ? [{
-      label: 'Revisi Diminta',
-      time: null as string | null,
-      color: 'bg-orange-400',
-      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
-      note: task.submission_notes,
-    }] : []),
-    {
-      label: 'Disetujui',
-      time: fmtDt(task.approved_at),
-      color: task.approved_at ? 'bg-emerald-500' : 'bg-gray-300',
-      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
-    },
-  ];
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-card shadow-2xl w-full max-w-sm">
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <h3 className="text-[14px] font-bold text-gray-900">Log Histori Task</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[220px]">{task.name} · {task.content_plan?.title}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[220px]">
+              {task.name} · {task.content_plan?.title}
+            </p>
           </div>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-400 text-lg leading-none">×</button>
         </div>
-        <div className="p-5">
-          <div className="relative">
-            {/* vertical line */}
-            <div className="absolute left-[15px] top-0 bottom-0 w-px bg-gray-200" />
-            <div className="space-y-5">
-              {events.map((ev, i) => (
-                <div key={i} className="flex items-start gap-3 relative">
-                  <div className={`w-[30px] h-[30px] rounded-full ${ev.color} flex items-center justify-center flex-shrink-0 text-white z-10`}>
-                    {ev.icon}
-                  </div>
-                  <div className="flex-1 min-w-0 pt-1">
-                    <p className={`text-[13px] font-semibold ${ev.time || ev.label === 'Revisi Diminta' ? 'text-gray-800' : 'text-gray-300'}`}>
-                      {ev.label}
-                    </p>
-                    <p className={`text-[11px] mt-0.5 ${ev.time ? 'text-gray-400' : 'text-gray-300 italic'}`}>
-                      {ev.time ?? 'Belum terjadi'}
-                    </p>
-                    {ev.note && (
-                      <p className="text-[11px] text-gray-500 mt-1 bg-gray-50 rounded px-2 py-1 line-clamp-2 italic">
-                        &quot;{ev.note}&quot;
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
+
+        {/* Body */}
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
+          {isLoading ? (
+            <div className="py-8 text-center text-[12px] text-gray-400">Memuat histori...</div>
+          ) : logs.length === 0 ? (
+            <div className="py-8 text-center text-[12px] text-gray-400 italic">
+              Belum ada log histori untuk task ini.
             </div>
-          </div>
-          {/* File info */}
+          ) : (
+            <div className="relative">
+              {/* vertical connector */}
+              <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gray-200" />
+              <div className="space-y-4">
+                {logs.map((log, i) => {
+                  const meta = LOG_META[log.event_type];
+                  if (!meta) return null;
+                  return (
+                    <div key={log.id} className="flex items-start gap-3 relative">
+                      <div className={`w-[30px] h-[30px] rounded-full ${meta.color} flex items-center justify-center flex-shrink-0 text-white z-10 shadow-sm`}>
+                        {meta.icon}
+                      </div>
+                      <div className="flex-1 min-w-0 pt-0.5 pb-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-[13px] font-bold text-gray-800">
+                            {meta.label(log.event_number)}
+                          </p>
+                          {log.actor_name && (
+                            <span className="text-[10px] text-gray-400">oleh {log.actor_name}</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5 font-mono">
+                          {fmtWIB(log.created_at)}
+                        </p>
+                        {log.notes && (
+                          <div className="mt-1.5 bg-gray-50 border border-gray-100 rounded px-2.5 py-1.5">
+                            <p className="text-[11px] text-gray-600 italic leading-relaxed">
+                              &ldquo;{log.notes}&rdquo;
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      {i < logs.length - 1 && <div className="sr-only" />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Current file */}
           {task.file_url && (
             <div className="mt-5 pt-4 border-t border-gray-100">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">File Hasil Kerja</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">File Hasil Kerja Saat Ini</p>
               <a href={task.file_url} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-btn border border-brand/30 bg-brand/5 text-brand text-[12px] hover:bg-brand/10 transition-colors">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -687,7 +748,7 @@ function TasksView() {
       const supabase = getSupabaseBrowser();
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, submit_count, revision_count, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .eq('pic_user_id', user!.id)
         .order('deadline', { ascending: true });
       return (data ?? []) as unknown as TaskRow[];
@@ -707,7 +768,7 @@ function TasksView() {
       if (!planIds.length) return [];
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, submit_count, revision_count, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .eq('status', 'submitted')
         .in('content_plan_id', planIds)
         .order('submitted_at', { ascending: false });
@@ -722,7 +783,7 @@ function TasksView() {
       const supabase = getSupabaseBrowser();
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, submit_count, revision_count, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .order('deadline', { ascending: true });
       return (data ?? []) as unknown as TaskRow[];
     },
@@ -872,7 +933,7 @@ function TasksView() {
             </thead>
             <tbody>
               {activeTasks.map(task => {
-                const st   = TASK_STATUS[task.status] ?? TASK_STATUS.pending;
+                const st   = getTaskBadge(task.status, task.submit_count ?? 0, task.revision_count ?? 0);
                 const late = isTaskLate(task);
 
                 const canSubmitTask  = task.status === 'pending' && task.pic_user_id === user?.id;
@@ -954,8 +1015,9 @@ function TasksView() {
                         {task.deadline ? fmtDate(task.deadline) : <span className="text-gray-300">—</span>}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${st.bg} ${st.text}`}>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold ${st.bg} ${st.text}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`} />
                         {st.label}
                       </span>
                     </td>

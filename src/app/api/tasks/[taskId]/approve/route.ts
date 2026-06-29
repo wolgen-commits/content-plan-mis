@@ -60,6 +60,15 @@ export async function POST(_req: NextRequest, { params }: { params: { taskId: st
 
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
 
+  // Insert log
+  await db.from('content_plan_task_logs').insert({
+    task_id:    params.taskId,
+    event_type: 'approved',
+    notes:      null,
+    actor_id:   user.id,
+    actor_name: user.name,
+  });
+
   // Notif ke PIC bahwa tasknya disetujui
   if (task.pic_user_id) {
     await sendNotifications({
