@@ -377,10 +377,11 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
                 onClick={() => setPopover(null)}
                 className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group">
                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STATUS_CAL[plan.status] ? '' : 'bg-gray-300'}`}
-                  style={{ background: {
+                  style={{ background: ({
                     draft: '#A1A1AA', pending_approval: '#F59E0B', approved: '#16A34A',
-                    in_production: '#2563EB', submitted: '#7C3AED', done: '#15803D', rejected: '#DC2626'
-                  }[plan.status] ?? '#A1A1AA' }} />
+                    in_production: '#2563EB', submitted: '#7C3AED', done: '#15803D', rejected: '#DC2626',
+                    published: '#0D9488',
+                  } as Record<string, string>)[plan.status] ?? '#A1A1AA' }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">
                     {plan.title}

@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/authStore';
 import { StatusBadge } from '@/components/ui/Badge';
@@ -8,19 +9,215 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Modal, ConfirmModal } from '@/components/ui/Modal';
 import { Input, Textarea } from '@/components/ui/Input';
 import { formatDate, CONTENT_TYPE_LABELS } from '@/lib/utils';
-import { ContentPlan, ContentPlanTask, TaskStatus, User, ContentAssignee, ContentSubmission } from '@/types';
+import { ContentPlan, ContentPlanTask, User, ContentAssignee, ContentSubmission } from '@/types';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 
-const TASK_STATUS: Record<string, { bg: string; text: string; label: string }> = {
-  pending:   { bg: 'bg-gray-100',    text: 'text-gray-500',    label: 'Pending' },
-  submitted: { bg: 'bg-amber-50',    text: 'text-amber-600',   label: 'Menunggu Review' },
-  done:      { bg: 'bg-emerald-50',  text: 'text-emerald-600', label: 'Selesai' },
-  rejected:  { bg: 'bg-red-50',      text: 'text-red-500',     label: 'Ditolak' },
+/* ── WIB formatter ── */
+function fmtWIB(d: string | null | undefined): string | null {
+  if (!d) return null;
+  try {
+    const s = new Date(d).toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    return s.replace(/\./g, ':') + ' WIB';
+  } catch { return d; }
+}
+
+/* ── Dynamic task status badge ── */
+interface TaskBadge { label: string; bg: string; text: string; dot: string }
+function getTaskBadge(status: string, submitCount: number, revisionCount: number): TaskBadge {
+  if (status === 'done') return { label: 'Disetujui', bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' };
+  if (status === 'submitted') {
+    const n = submitCount > 0 ? submitCount : 1;
+    return { label: `Diajukan #${n}`, bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' };
+  }
+  if (status === 'pending' && revisionCount > 0) return { label: `Perlu Revisi #${revisionCount}`, bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-400' };
+  return { label: 'Belum Dikerjakan', bg: 'bg-gray-100', text: 'text-gray-500', dot: 'bg-gray-400' };
+}
+
+/* ── Task history log ── */
+interface TaskLog {
+  id: string;
+  event_type: 'created' | 'submitted' | 'revision_requested' | 'approved';
+  event_number: number | null;
+  notes: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
+
+const LOG_META: Record<string, { label: (n?: number | null) => string; color: string; icon: React.ReactNode }> = {
+  created: {
+    label: () => 'Task Dibuat',
+    color: 'bg-blue-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,
+  },
+  submitted: {
+    label: (n) => `Submit #${n ?? 1}`,
+    color: 'bg-amber-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
+  },
+  revision_requested: {
+    label: (n) => `Revisi #${n ?? 1}`,
+    color: 'bg-orange-400',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  },
+  approved: {
+    label: () => 'Disetujui',
+    color: 'bg-emerald-500',
+    icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  },
 };
+
+/* ── Task history modal ── */
+function TaskHistoryModal({ task, planTitle, onClose }: { task: ContentPlanTask; planTitle: string; onClose: () => void }) {
+  const { data: logs = [], isLoading } = useQuery<TaskLog[]>({
+    queryKey: ['task-logs', task.id],
+    queryFn: async () => {
+      const supabase = getSupabaseBrowser();
+      const { data } = await supabase
+        .from('content_plan_task_logs')
+        .select('id, event_type, event_number, notes, actor_name, created_at')
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: true });
+      return (data ?? []) as TaskLog[];
+    },
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-card shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-[14px] font-bold text-gray-900">Log Histori Task</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[220px]">
+              {task.name} · {planTitle}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-400 text-lg leading-none">×</button>
+        </div>
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
+          {isLoading ? (
+            <div className="py-8 text-center text-[12px] text-gray-400">Memuat histori...</div>
+          ) : logs.length === 0 ? (
+            <div className="py-8 text-center text-[12px] text-gray-400 italic">Belum ada log histori untuk task ini.</div>
+          ) : (
+            <div className="relative">
+              <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gray-200" />
+              <div className="space-y-4">
+                {logs.map(log => {
+                  const meta = LOG_META[log.event_type];
+                  if (!meta) return null;
+                  return (
+                    <div key={log.id} className="flex items-start gap-3 relative">
+                      <div className={`w-[30px] h-[30px] rounded-full ${meta.color} flex items-center justify-center flex-shrink-0 text-white z-10 shadow-sm`}>
+                        {meta.icon}
+                      </div>
+                      <div className="flex-1 min-w-0 pt-0.5 pb-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-[13px] font-bold text-gray-800">{meta.label(log.event_number)}</p>
+                          {log.actor_name && <span className="text-[10px] text-gray-400">oleh {log.actor_name}</span>}
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{fmtWIB(log.created_at)}</p>
+                        {log.notes && (
+                          <div className="mt-1.5 bg-gray-50 border border-gray-100 rounded px-2.5 py-1.5">
+                            <p className="text-[11px] text-gray-600 italic leading-relaxed">&ldquo;{log.notes}&rdquo;</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {task.file_url && (
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">File Hasil Kerja Saat Ini</p>
+              <a href={task.file_url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-btn border border-brand/30 bg-brand/5 text-brand text-[12px] hover:bg-brand/10 transition-colors">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                {task.file_name ?? 'Lihat File'}
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Task action dropdown ── */
+interface TaskActionItem {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+  dividerBefore?: boolean;
+  disabled?: boolean;
+}
+
+function TaskActionDropdown({ items }: { items: TaskActionItem[] }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX });
+    }
+    setOpen(v => !v);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div>
+      <button ref={btnRef} type="button" onClick={toggle}
+        className="w-7 h-7 rounded-md flex items-center justify-center bg-gray-100 hover:bg-brand hover:text-white text-gray-500 transition-colors">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'absolute', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="w-48 bg-white rounded-card border border-gray-200 shadow-xl py-1 overflow-hidden">
+          {items.map((item, i) => (
+            <div key={i}>
+              {item.dividerBefore && <div className="border-t border-gray-100 my-1" />}
+              <button type="button" disabled={item.disabled}
+                onClick={() => { if (!item.disabled) { setOpen(false); item.onClick(); } }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors text-left disabled:opacity-40 ${
+                  item.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'
+                }`}>
+                <span className={`flex-shrink-0 ${item.danger ? 'text-red-400' : 'text-gray-400'}`}>{item.icon}</span>
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 const EMPTY_TASK = { name: '', deadline: '', pic: '', reference: '', description: '' };
 
@@ -55,15 +252,8 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
   const [reviseTaskId, setReviseTaskId] = useState<string | null>(null);
   const [reviseNotes, setReviseNotes] = useState('');
 
-  // task history toggle
-  const [openHistoryIds, setOpenHistoryIds] = useState<Set<string>>(new Set());
-  function toggleHistory(taskId: string) {
-    setOpenHistoryIds(prev => {
-      const next = new Set(prev);
-      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
-      return next;
-    });
-  }
+  // task history modal
+  const [historyTarget, setHistoryTarget] = useState<ContentPlanTask | null>(null);
 
   // task submit modal
   const [submitTaskTarget, setSubmitTaskTarget] = useState<ContentPlanTask | null>(null);
@@ -87,7 +277,7 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
           tags:content_tags(*),
           assignees:content_assignees(*, user:users(id, name, email, avatar_url, role)),
           submissions:content_submissions(*, submitter:users!submitted_by(id, name, avatar_url)),
-          tasks:content_plan_tasks(id, name, deadline, pic, pic_user_id, reference, description, status, file_url, file_name, submission_notes, submitted_at, approved_by, approved_at, completed_at, completed_by, created_at)
+          tasks:content_plan_tasks(id, name, deadline, pic, pic_user_id, reference, description, status, submit_count, revision_count, file_url, file_name, submission_notes, submitted_at, approved_by, approved_at, completed_at, completed_by, created_at)
         `)
         .eq('id', params.id)
         .single();
@@ -457,53 +647,58 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
               </div>
             ) : (
               <table className="w-full border-collapse text-[12px]">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400 whitespace-nowrap">Aksi</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400">Nama Task</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400 whitespace-nowrap">PIC</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400 whitespace-nowrap">Deadline</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400 whitespace-nowrap">Status</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.6px] text-gray-400 whitespace-nowrap">Riwayat</th>
-                    {canManage && <th className="w-8"/>}
+                    <th className="px-3 py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-gray-400 border-b border-gray-200 whitespace-nowrap">Aksi</th>
+                    <th className="px-3 py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-gray-400 border-b border-gray-200 min-w-[180px]">Nama Task</th>
+                    <th className="px-3 py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-gray-400 border-b border-gray-200 whitespace-nowrap">PIC</th>
+                    <th className="px-3 py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-gray-400 border-b border-gray-200 whitespace-nowrap">Deadline</th>
+                    <th className="px-3 py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-gray-400 border-b border-gray-200 whitespace-nowrap">Status</th>
+                    {canManage && <th className="px-3 py-[9px] border-b border-gray-200 w-8"/>}
                   </tr>
                 </thead>
                 <tbody>
                   {tasks.map(task => {
-                    const st = TASK_STATUS[(task.status as TaskStatus) ?? 'pending'] ?? TASK_STATUS.pending;
+                    const taskWithCounts = task as ContentPlanTask & { submit_count?: number; revision_count?: number };
+                    const st = getTaskBadge(task.status, taskWithCounts.submit_count ?? 0, taskWithCounts.revision_count ?? 0);
                     const isPic = task.pic_user_id === user?.id;
-                    return (<>
-                      <tr key={task.id} className="border-t border-gray-100 hover:bg-gray-50/60 transition-colors group">
+                    const canSubmitTask  = isPic && task.status === 'pending';
+                    const canApproveTask = canManage && task.status === 'submitted';
+                    const isLate = task.deadline && task.status !== 'done' && new Date(task.deadline) < new Date(new Date().toDateString());
+
+                    const dropdownItems: TaskActionItem[] = [
+                      {
+                        label: 'Submit Task',
+                        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
+                        onClick: () => { setSubmitTaskTarget(task); setSubmitFile(null); setSubmitNotes(''); },
+                        disabled: !canSubmitTask,
+                      },
+                      {
+                        label: 'Setujui Task',
+                        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+                        onClick: () => approveTaskMutation.mutate(task.id),
+                        disabled: !canApproveTask,
+                      },
+                      {
+                        label: 'Minta Revisi',
+                        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+                        onClick: () => { setReviseTaskId(task.id); setReviseNotes(''); },
+                        disabled: !canApproveTask,
+                        danger: true,
+                      },
+                      {
+                        label: 'Log Histori',
+                        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+                        onClick: () => setHistoryTarget(task),
+                        dividerBefore: true,
+                      },
+                    ];
+
+                    return (
+                      <tr key={task.id} className={`border-b border-gray-100 last:border-0 hover:bg-gray-50/70 transition-colors group ${isLate ? 'bg-red-50/30' : ''}`}>
                         {/* Aksi */}
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {isPic && task.status === 'pending' && (
-                            <button type="button" onClick={() => { setSubmitTaskTarget(task); setSubmitFile(null); setSubmitNotes(''); }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-brand hover:bg-brand-hover text-white text-[11px] font-semibold transition-colors">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-                              Submit
-                            </button>
-                          )}
-                          {isPic && task.status === 'submitted' && (
-                            <span className="text-[11px] text-amber-600 font-medium">Menunggu review...</span>
-                          )}
-                          {isPic && task.status === 'done' && (
-                            <span className="text-[11px] text-emerald-600 font-medium">✓ Selesai</span>
-                          )}
-                          {canManage && !isPic && task.status === 'submitted' && (
-                            <div className="flex gap-1.5">
-                              <button type="button" onClick={() => approveTaskMutation.mutate(task.id)}
-                                disabled={approveTaskMutation.isPending}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-btn bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold transition-colors">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                Setuju
-                              </button>
-                              <button type="button" onClick={() => { setReviseTaskId(task.id); setReviseNotes(''); }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-btn bg-amber-100 hover:bg-amber-200 text-amber-700 text-[11px] font-semibold transition-colors">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                Minta Revisi
-                              </button>
-                            </div>
-                          )}
+                        <td className="px-3 py-2.5 w-[44px]">
+                          <TaskActionDropdown items={dropdownItems} />
                         </td>
 
                         {/* Nama Task */}
@@ -513,13 +708,13 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
                             <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{task.description}</p>
                           )}
                           {task.status === 'pending' && task.submission_notes && (
-                            <div className="flex items-start gap-1 mt-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              <span className="italic">Revisi: {task.submission_notes}</span>
+                            <div className="flex items-center gap-1 mt-0.5 text-[10px] text-amber-700">
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              <span className="italic line-clamp-1">Revisi: {task.submission_notes}</span>
                             </div>
                           )}
                           {task.status === 'submitted' && task.submission_notes && (
-                            <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1 italic">{task.submission_notes}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1">{task.submission_notes}</p>
                           )}
                           {task.file_url && (
                             <a href={task.file_url} target="_blank" rel="noopener noreferrer"
@@ -544,34 +739,18 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
                         </td>
 
                         {/* Deadline */}
-                        <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
-                          {task.deadline ? fmtDate(task.deadline) : <span className="text-gray-300">—</span>}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-3 py-2.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${st.bg} ${st.text}`}>
-                            {st.label}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span className={`text-[12px] ${isLate ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                            {task.deadline ? fmtDate(task.deadline) : <span className="text-gray-300">—</span>}
                           </span>
                         </td>
 
-                        {/* Riwayat toggle */}
+                        {/* Status */}
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => toggleHistory(task.id)}
-                            title="Lihat riwayat task"
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                              openHistoryIds.has(task.id)
-                                ? 'bg-brand/10 text-brand'
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }`}
-                          >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                            </svg>
-                            Riwayat
-                          </button>
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold ${st.bg} ${st.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`} />
+                            {st.label}
+                          </span>
                         </td>
 
                         {/* Delete */}
@@ -587,48 +766,7 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
                           </td>
                         )}
                       </tr>
-
-                      {/* ── History row ── */}
-                      {openHistoryIds.has(task.id) && (
-                        <tr className="bg-gray-50/80 border-t border-dashed border-gray-200">
-                          <td colSpan={canManage ? 7 : 6} className="px-5 py-3">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.8px] text-gray-400 mb-2.5">Riwayat Task</p>
-                            <ol className="relative border-l border-gray-200 ml-1 space-y-2.5">
-                              {/* Dibuat */}
-                              <li className="ml-3.5">
-                                <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-gray-400 border-2 border-white" />
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-[11px] font-semibold text-gray-700">Dibuat</span>
-                                  <span className="text-[10px] text-gray-400">{fmtDate(task.created_at)}</span>
-                                </div>
-                              </li>
-                              {/* Di-submit */}
-                              {task.submitted_at && (
-                                <li className="ml-3.5">
-                                  <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-white" />
-                                  <div className="flex items-baseline gap-2">
-                                    <span className="text-[11px] font-semibold text-amber-700">Di-submit</span>
-                                    <span className="text-[10px] text-gray-400">{fmtDate(task.submitted_at)}</span>
-                                  </div>
-                                </li>
-                              )}
-                              {/* Disetujui / Ditolak kembali */}
-                              {task.approved_at && (
-                                <li className="ml-3.5">
-                                  <div className={`absolute -left-[5px] w-2.5 h-2.5 rounded-full border-2 border-white ${task.status === 'done' ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                                  <div className="flex items-baseline gap-2">
-                                    <span className={`text-[11px] font-semibold ${task.status === 'done' ? 'text-emerald-700' : 'text-red-600'}`}>
-                                      {task.status === 'done' ? 'Disetujui' : 'Dikembalikan'}
-                                    </span>
-                                    <span className="text-[10px] text-gray-400">{fmtDate(task.approved_at)}</span>
-                                  </div>
-                                </li>
-                              )}
-                            </ol>
-                          </td>
-                        </tr>
-                      )}
-                    </>);
+                    );
                   })}
                 </tbody>
               </table>
@@ -752,6 +890,10 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
       </div>
 
       {/* ── Modals ── */}
+      {historyTarget && (
+        <TaskHistoryModal task={historyTarget} planTitle={data.title} onClose={() => setHistoryTarget(null)} />
+      )}
+
       <ConfirmModal open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)}
         onConfirm={() => submitMutation.mutate()} loading={submitMutation.isPending}
         title="Ajukan untuk Persetujuan"
