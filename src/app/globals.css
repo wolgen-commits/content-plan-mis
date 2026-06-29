@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Flyout panel entrance animation */
+.animate-in {
+  animation: flyout-in 0.15s ease-out;
+}
+@keyframes flyout-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* FullCalendar brand overrides */
+.fc-button-primary {
+  background-color: #BB2649 !important;
+  border-color: #BB2649 !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+.fc-button-primary:hover {
+  background-color: #9B1E3C !important;
+}
+.fc-event {
+  border-radius: 4px;
+  border: none;
+  padding: 2px 4px;
+  font-size: 12px;
+}
