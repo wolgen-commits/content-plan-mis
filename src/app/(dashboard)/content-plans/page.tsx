@@ -76,6 +76,17 @@ const STATUS_CAL: Record<string, string> = {
   published:        'bg-teal-100 text-teal-700',
 };
 
+const STATUS_DOT: Record<string, string> = {
+  draft:            '#A1A1AA',
+  pending_approval: '#F59E0B',
+  approved:         '#16A34A',
+  in_production:    '#2563EB',
+  submitted:        '#7C3AED',
+  done:             '#15803D',
+  rejected:         '#DC2626',
+  published:        '#0D9488',
+};
+
 /* ── SVG icons ── */
 const IcoEye      = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
 const IcoEdit     = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
@@ -377,11 +388,7 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
                 onClick={() => setPopover(null)}
                 className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group">
                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STATUS_CAL[plan.status] ? '' : 'bg-gray-300'}`}
-                  style={{ background: ({
-                    draft: '#A1A1AA', pending_approval: '#F59E0B', approved: '#16A34A',
-                    in_production: '#2563EB', submitted: '#7C3AED', done: '#15803D', rejected: '#DC2626',
-                    published: '#0D9488',
-                  } as Record<string, string>)[plan.status] ?? '#A1A1AA' }} />
+                  style={{ background: STATUS_DOT[plan.status] ?? '#A1A1AA' }} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">
                     {plan.title}
