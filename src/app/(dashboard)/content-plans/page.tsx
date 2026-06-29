@@ -416,7 +416,166 @@ interface TaskRow {
   file_name: string | null;
   submission_notes: string | null;
   submitted_at: string | null;
+  created_at: string | null;
+  approved_at: string | null;
   content_plan: { id: string; title: string; status: string; created_by: string } | null;
+}
+
+/* ── Task history modal ── */
+function TaskHistoryModal({ task, onClose }: { task: TaskRow; onClose: () => void }) {
+  const fmtDt = (d: string | null) => {
+    if (!d) return null;
+    return format(new Date(d), 'dd MMM yyyy, HH:mm');
+  };
+
+  const events: { label: string; time: string | null; color: string; icon: React.ReactNode; note?: string }[] = [
+    {
+      label: 'Task Dibuat',
+      time: fmtDt(task.created_at),
+      color: 'bg-blue-500',
+      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    },
+    {
+      label: 'Disubmit',
+      time: fmtDt(task.submitted_at),
+      color: task.submitted_at ? 'bg-amber-500' : 'bg-gray-300',
+      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
+      note: task.submitted_at && task.submission_notes ? task.submission_notes : undefined,
+    },
+    ...(task.status === 'pending' && task.submission_notes ? [{
+      label: 'Revisi Diminta',
+      time: null as string | null,
+      color: 'bg-orange-400',
+      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+      note: task.submission_notes,
+    }] : []),
+    {
+      label: 'Disetujui',
+      time: fmtDt(task.approved_at),
+      color: task.approved_at ? 'bg-emerald-500' : 'bg-gray-300',
+      icon: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-card shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-[14px] font-bold text-gray-900">Log Histori Task</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[220px]">{task.name} · {task.content_plan?.title}</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-400 text-lg leading-none">×</button>
+        </div>
+        <div className="p-5">
+          <div className="relative">
+            {/* vertical line */}
+            <div className="absolute left-[15px] top-0 bottom-0 w-px bg-gray-200" />
+            <div className="space-y-5">
+              {events.map((ev, i) => (
+                <div key={i} className="flex items-start gap-3 relative">
+                  <div className={`w-[30px] h-[30px] rounded-full ${ev.color} flex items-center justify-center flex-shrink-0 text-white z-10`}>
+                    {ev.icon}
+                  </div>
+                  <div className="flex-1 min-w-0 pt-1">
+                    <p className={`text-[13px] font-semibold ${ev.time || ev.label === 'Revisi Diminta' ? 'text-gray-800' : 'text-gray-300'}`}>
+                      {ev.label}
+                    </p>
+                    <p className={`text-[11px] mt-0.5 ${ev.time ? 'text-gray-400' : 'text-gray-300 italic'}`}>
+                      {ev.time ?? 'Belum terjadi'}
+                    </p>
+                    {ev.note && (
+                      <p className="text-[11px] text-gray-500 mt-1 bg-gray-50 rounded px-2 py-1 line-clamp-2 italic">
+                        &quot;{ev.note}&quot;
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* File info */}
+          {task.file_url && (
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">File Hasil Kerja</p>
+              <a href={task.file_url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-btn border border-brand/30 bg-brand/5 text-brand text-[12px] hover:bg-brand/10 transition-colors">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                {task.file_name ?? 'Lihat File'}
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Task action dropdown ── */
+interface TaskActionItem {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+  dividerBefore?: boolean;
+  disabled?: boolean;
+}
+
+function TaskActionDropdown({ items }: { items: TaskActionItem[] }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX });
+    }
+    setOpen(v => !v);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div>
+      <button ref={btnRef} type="button" onClick={toggle}
+        className="w-7 h-7 rounded-md flex items-center justify-center bg-gray-100 hover:bg-brand hover:text-white text-gray-500 transition-colors">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'absolute', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="w-48 bg-white rounded-card border border-gray-200 shadow-xl py-1 overflow-hidden">
+          {items.map((item, i) => (
+            <div key={i}>
+              {item.dividerBefore && <div className="border-t border-gray-100 my-1" />}
+              <button type="button" disabled={item.disabled}
+                onClick={() => { if (!item.disabled) { setOpen(false); item.onClick(); } }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px] transition-colors text-left disabled:opacity-40 ${
+                  item.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'
+                }`}>
+                <span className={`flex-shrink-0 ${item.danger ? 'text-red-400' : 'text-gray-400'}`}>{item.icon}</span>
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
 /* ── Submit Modal ── */
@@ -510,10 +669,12 @@ function isTaskLate(task: TaskRow) {
 /* ── TasksView ── */
 function TasksView() {
   const user = useAuthStore(s => s.user);
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [submitTarget, setSubmitTarget] = useState<TaskRow | null>(null);
   const [reviseTarget, setReviseTarget] = useState<TaskRow | null>(null);
   const [reviseNotes, setReviseNotes] = useState('');
+  const [historyTarget, setHistoryTarget] = useState<TaskRow | null>(null);
   const [activeSection, setActiveSection] = useState<'mine' | 'approval' | 'team'>('mine');
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
 
@@ -526,7 +687,7 @@ function TasksView() {
       const supabase = getSupabaseBrowser();
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .eq('pic_user_id', user!.id)
         .order('deadline', { ascending: true });
       return (data ?? []) as unknown as TaskRow[];
@@ -546,7 +707,7 @@ function TasksView() {
       if (!planIds.length) return [];
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .eq('status', 'submitted')
         .in('content_plan_id', planIds)
         .order('submitted_at', { ascending: false });
@@ -561,7 +722,7 @@ function TasksView() {
       const supabase = getSupabaseBrowser();
       const { data } = await supabase
         .from('content_plan_tasks')
-        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
+        .select('id, name, deadline, pic, pic_user_id, status, file_url, file_name, submission_notes, submitted_at, created_at, approved_at, content_plan:content_plans!content_plan_id(id, title, status, created_by)')
         .order('deadline', { ascending: true });
       return (data ?? []) as unknown as TaskRow[];
     },
@@ -700,7 +861,7 @@ function TasksView() {
           <table className="w-full border-collapse text-[12px]">
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
-                {activeSection !== 'team' && <TH>Aksi</TH>}
+                <TH>Aksi</TH>
                 <TH wide>Nama Task</TH>
                 <TH wide>Content Plan</TH>
                 <TH>PIC</TH>
@@ -713,40 +874,50 @@ function TasksView() {
               {activeTasks.map(task => {
                 const st   = TASK_STATUS[task.status] ?? TASK_STATUS.pending;
                 const late = isTaskLate(task);
+
+                const canSubmitTask  = task.status === 'pending' && task.pic_user_id === user?.id;
+                const canApproveTask = canApprove && task.status === 'submitted';
+
+                const dropdownItems: TaskActionItem[] = [
+                  {
+                    label: 'Detail',
+                    icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+                    onClick: () => task.content_plan && router.push(`/content-plans/${task.content_plan.id}`),
+                    disabled: !task.content_plan,
+                  },
+                  {
+                    label: 'Submit Task',
+                    icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>,
+                    onClick: () => setSubmitTarget(task),
+                    disabled: !canSubmitTask,
+                    dividerBefore: true,
+                  },
+                  {
+                    label: 'Setujui Task',
+                    icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+                    onClick: () => approveMutation.mutate(task.id),
+                    disabled: !canApproveTask,
+                  },
+                  {
+                    label: 'Minta Revisi',
+                    icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+                    onClick: () => { setReviseTarget(task); setReviseNotes(''); },
+                    disabled: !canApproveTask,
+                    danger: true,
+                  },
+                  {
+                    label: 'Log Histori',
+                    icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+                    onClick: () => setHistoryTarget(task),
+                    dividerBefore: true,
+                  },
+                ];
+
                 return (
                   <tr key={task.id} className={`border-b border-gray-100 last:border-0 hover:bg-gray-50/70 transition-colors ${late ? 'bg-red-50/30' : ''}`}>
-                    {activeSection !== 'team' && (
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {activeSection === 'mine' && task.status === 'pending' && task.pic_user_id === user?.id && (
-                          <button type="button" onClick={() => setSubmitTarget(task)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-brand hover:bg-brand-hover text-white text-[11px] font-semibold transition-colors">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-                            Submit
-                          </button>
-                        )}
-                        {activeSection === 'mine' && task.status === 'submitted' && (
-                          <span className="text-[11px] text-amber-600 font-medium">Menunggu review...</span>
-                        )}
-                        {activeSection === 'mine' && task.status === 'done' && (
-                          <span className="text-[11px] text-emerald-600 font-medium">✓ Selesai</span>
-                        )}
-                        {activeSection === 'approval' && (
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => approveMutation.mutate(task.id)}
-                              disabled={approveMutation.isPending}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-btn bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold transition-colors">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                              Setuju
-                            </button>
-                            <button type="button" onClick={() => { setReviseTarget(task); setReviseNotes(''); }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-btn bg-amber-100 hover:bg-amber-200 text-amber-700 text-[11px] font-semibold transition-colors">
-                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              Minta Revisi
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    )}
+                    <td className="px-3 py-2.5 w-[44px]">
+                      <TaskActionDropdown items={dropdownItems} />
+                    </td>
                     <td className="px-3 py-2.5">
                       <p className={`font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.name}</p>
                       {task.status === 'pending' && task.submission_notes && (
@@ -818,6 +989,10 @@ function TasksView() {
 
       {submitTarget && (
         <TaskSubmitModal task={submitTarget} onClose={() => setSubmitTarget(null)} onSuccess={invalidate} />
+      )}
+
+      {historyTarget && (
+        <TaskHistoryModal task={historyTarget} onClose={() => setHistoryTarget(null)} />
       )}
 
       {/* Modal Minta Revisi */}
