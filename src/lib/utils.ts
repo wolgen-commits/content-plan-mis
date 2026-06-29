@@ -20,6 +20,7 @@ export const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted',
   done: 'Selesai',
   rejected: 'Ditolak',
+  published: 'Published',
 };
 
 export const STATUS_COLORS: Record<string, string> = {
@@ -30,6 +31,7 @@ export const STATUS_COLORS: Record<string, string> = {
   submitted:       'bg-brand-light text-brand',
   done:            'bg-success-light text-success',
   rejected:        'bg-danger-light text-danger',
+  published:       'bg-teal-100 text-teal-700',
 };
 
 export const CHANNEL_COLORS: Record<string, string> = {

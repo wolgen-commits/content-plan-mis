@@ -12,7 +12,8 @@ export type ContentStatus =
   | 'in_production'
   | 'submitted'
   | 'done'
-  | 'rejected';
+  | 'rejected'
+  | 'published';
 
 export type ContentType = 'post' | 'reel' | 'story' | 'carousel' | 'video' | 'thread' | 'short';
 export type Channel = 'Instagram' | 'TikTok' | 'YouTube' | 'LinkedIn' | 'Twitter' | 'Facebook' | 'Website';

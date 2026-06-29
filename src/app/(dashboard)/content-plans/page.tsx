@@ -62,6 +62,7 @@ const STATUS_BTN: Record<string, string> = {
   submitted:        'bg-violet-500 hover:bg-violet-600',
   done:             'bg-emerald-600 hover:bg-emerald-700',
   rejected:         'bg-red-500 hover:bg-red-600',
+  published:        'bg-teal-500 hover:bg-teal-600',
 };
 
 const STATUS_CAL: Record<string, string> = {
@@ -72,6 +73,7 @@ const STATUS_CAL: Record<string, string> = {
   submitted:        'bg-violet-100 text-violet-700',
   done:             'bg-emerald-200 text-emerald-800',
   rejected:         'bg-red-100 text-red-600',
+  published:        'bg-teal-100 text-teal-700',
 };
 
 /* ── SVG icons ── */
@@ -83,6 +85,7 @@ const IcoX        = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" 
 const IcoUpload   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>;
 const IcoTrash    = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
 const IcoClipboard = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>;
+const IcoGlobe    = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 
 /* ── ActionDropdown ── */
 interface MenuItem { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean; dividerBefore?: boolean; }
@@ -1113,6 +1116,7 @@ export default function ContentPlansPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
   const [rejectNotes, setRejectNotes] = useState('');
+  const [publishWarnTasks, setPublishWarnTasks] = useState<{ id: string; name: string; status: string }[]>([]);
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ['content-plans', { search, status: statusFilter, channel: channelFilter }],
@@ -1126,7 +1130,7 @@ export default function ContentPlansPage() {
           creator:users!created_by(id, name),
           assignees:content_assignees(id, role, user:users(id, name)),
           submissions:content_submissions(id, status),
-          tasks:content_plan_tasks(id, name, deadline)
+          tasks:content_plan_tasks(id, name, deadline, status)
         `)
         .order('created_at', { ascending: false });
 
@@ -1195,6 +1199,27 @@ export default function ContentPlansPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const publishMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content-plans/${id}/publish`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw body;
+    },
+    onSuccess: () => {
+      toast.success('Plan berhasil dipublish!');
+      queryClient.invalidateQueries({ queryKey: ['content-plans'] });
+    },
+    onError: (err: { message?: string; incomplete_tasks?: { id: string; name: string }[] }) => {
+      if (err.incomplete_tasks?.length) {
+        setPublishWarnTasks(
+          err.incomplete_tasks.map(t => ({ id: t.id, name: t.name, status: 'pending' }))
+        );
+      } else {
+        toast.error(err.message ?? 'Gagal mempublish plan');
+      }
+    },
+  });
+
   const canCreate = user?.role === 'content_planner' || user?.role === 'admin';
 
   function buildMenuItems(plan: ContentPlan): MenuItem[] {
@@ -1225,6 +1250,22 @@ export default function ContentPlansPage() {
     }
     if (isCreative && isAssigned && status === 'in_production') {
       items.push({ label: 'Upload Hasil Kerja', icon: IcoUpload, onClick: () => router.push(`/content-plans/${plan.id}`), dividerBefore: true });
+    }
+    if (canManagePlan && status === 'done') {
+      const planTasks = (plan.tasks ?? []) as { id: string; name: string; deadline: string; status: string }[];
+      const incompleteTasks = planTasks.filter(t => t.status !== 'done');
+      items.push({
+        label: 'Publish',
+        icon: IcoGlobe,
+        dividerBefore: true,
+        onClick: () => {
+          if (incompleteTasks.length > 0) {
+            setPublishWarnTasks(incompleteTasks.map(t => ({ id: t.id, name: t.name, status: t.status })));
+          } else {
+            publishMutation.mutate(plan.id);
+          }
+        },
+      });
     }
     if (canManagePlan && status === 'draft') {
       items.push({ label: 'Hapus', icon: IcoTrash, onClick: () => setDeleteId(plan.id), danger: true, dividerBefore: true });
@@ -1449,6 +1490,62 @@ export default function ContentPlansPage() {
                 onClick={() => rejectNotes.trim() && rejectMutation.mutate({ id: rejectTarget, notes: rejectNotes })}
               >
                 Tolak Plan
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Publish Warning Modal ── */}
+      {publishWarnTasks.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setPublishWarnTasks([])} />
+          <div className="relative bg-white rounded-card shadow-2xl w-full max-w-sm">
+            {/* Header */}
+            <div className="flex items-start gap-3 px-5 py-4 border-b border-gray-100">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-[14px] font-bold text-gray-900">Task Belum Selesai</h3>
+                <p className="text-[12px] text-gray-500 mt-0.5">
+                  Plan tidak bisa dipublish karena masih ada task yang belum selesai.
+                </p>
+              </div>
+            </div>
+            {/* Task list */}
+            <div className="px-5 py-4 max-h-60 overflow-y-auto">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                Task yang belum selesai ({publishWarnTasks.length})
+              </p>
+              <div className="space-y-1.5">
+                {publishWarnTasks.map(t => {
+                  const badge = t.status === 'submitted'
+                    ? { label: 'Menunggu Review', bg: 'bg-amber-100', text: 'text-amber-700' }
+                    : { label: 'Belum Dikerjakan', bg: 'bg-gray-100', text: 'text-gray-500' };
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-3 py-2 px-3 rounded-btn bg-gray-50 border border-gray-100">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+                          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <span className="text-[12px] font-medium text-gray-700 truncate">{t.name}</span>
+                      </div>
+                      <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${badge.bg} ${badge.text}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+              <Button type="button" onClick={() => setPublishWarnTasks([])}>
+                Mengerti
               </Button>
             </div>
           </div>
