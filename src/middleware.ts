@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateSession } from '@/lib/supabase/middleware';
 
-const PUBLIC_PATHS = ['/login', '/api/seed'];
+const PUBLIC_PATHS = ['/login', '/api/'];
 
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Jangan intercept API routes — biarkan route handler handle auth sendiri (return 401)
-  if (pathname.startsWith('/api/')) {
-    const { supabaseResponse } = await updateSession(request);
-    return supabaseResponse;
+  // Biarkan API routes, static assets langsung lewat
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+    return NextResponse.next();
   }
 
-  const { supabaseResponse, user } = await updateSession(request);
+  const token = request.cookies.get('auth_token')?.value;
 
-  const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p));
-
-  if (!user && !isPublic) {
+  if (!token) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (user && pathname === '/login') {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
-  return supabaseResponse;
+  return NextResponse.next();
 }
 
 export const config = {
