@@ -250,6 +250,8 @@ export default function Topbar() {
     const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     clearAuth();
+    // Hapus auth_token cookie middleware
+    document.cookie = 'auth_token=; path=/; max-age=0; SameSite=Lax';
     router.push('/login');
   }
 

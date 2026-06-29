@@ -37,6 +37,9 @@ export default function LoginPage() {
       if (profile) setUser(profile);
     }
 
+    // Set auth_token cookie untuk middleware Edge Runtime
+    document.cookie = `auth_token=1; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+
     router.push('/dashboard');
   }
 
