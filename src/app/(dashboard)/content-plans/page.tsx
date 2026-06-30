@@ -213,7 +213,7 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
       map.get(key)!.push(plan);
     }
     return map;
-  }, [plans]);
+  }, [filteredPlans]);
 
   // channelsByDate: date key → { channel → plans[] }
   const channelsByDate = useMemo(() => {
