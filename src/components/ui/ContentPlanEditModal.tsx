@@ -9,7 +9,7 @@ import { Input, Textarea, Select } from '@/components/ui/Input';
 import { toast } from 'sonner';
 import {
   CONTENT_TYPES, CONTENT_TYPE_LABELS, CONTENT_TYPE_CHANNEL_MAP,
-  CHANNELS, WORK_ORDERS,
+  CHANNELS,
 } from '@/lib/utils';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
 import { ContentPlan } from '@/types';
@@ -23,8 +23,6 @@ const schema = z.object({
   visual_brief:   z.string().optional(),
   caption:        z.string().optional(),
   scheduled_date: z.string().optional(),
-  deadline_date:  z.string().optional(),
-  work_order:     z.string().optional(),
   tags:           z.string().optional(),
   references:     z.array(z.object({ url: z.string(), label: z.string() })).optional(),
 });
@@ -168,8 +166,6 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
       visual_brief:   p.visual_brief ?? '',
       caption:        p.caption ?? '',
       scheduled_date: p.scheduled_date ?? '',
-      deadline_date:  p.deadline_date ?? '',
-      work_order:     p.work_order ?? '',
       tags:           p.tags?.map((t: { tag: string }) => t.tag).join(', ') ?? '',
       references:     p.references?.map((r: { url: string; label: string | null }) => ({ url: r.url, label: r.label ?? '' })) ?? [],
     });
@@ -319,8 +315,6 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
       visual_brief_images: visualBriefImages.length ? visualBriefImages : null,
       caption:             values.caption || null,
       scheduled_date: values.scheduled_date || null,
-      deadline_date:  values.deadline_date || null,
-      work_order:     values.work_order || null,
       tags,
       references,
     });
@@ -440,15 +434,6 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
 
                     <span className={LBL}>Tanggal Tayang</span>
                     <Input type="date" {...register('scheduled_date')} />
-
-                    <span className={LBL}>Deadline Plan</span>
-                    <Input type="date" {...register('deadline_date')} />
-
-                    <span className={LBL}>Work Order</span>
-                    <Select {...register('work_order')}>
-                      <option value="">Tidak ditentukan</option>
-                      {WORK_ORDERS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-                    </Select>
 
                     <p className={SEC}>Konten</p>
 

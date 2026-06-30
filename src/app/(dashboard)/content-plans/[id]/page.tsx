@@ -479,6 +479,13 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
   const isCreative   = user?.role === 'designer' || user?.role === 'videographer';
   const canManage    = isCreator || user?.role === 'admin';
   const tasks        = (data.tasks ?? []) as ContentPlanTask[];
+
+  // Deadline otomatis = deadline task terpanjang
+  const latestTaskDeadline = tasks.reduce<string | null>((max, t) => {
+    if (!t.deadline) return max;
+    if (!max) return t.deadline;
+    return t.deadline > max ? t.deadline : max;
+  }, null);
   const doneCount    = tasks.filter(t => t.status === 'done').length;
   const allTasksDone = tasks.every(t => t.status === 'done');
   const contentTypes = Array.isArray(data.content_type) ? data.content_type : [data.content_type];
@@ -888,7 +895,12 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
               </div>
               <div>
                 <p className="text-[10px] text-gray-400">Deadline</p>
-                <p className="text-[12px] font-medium text-gray-900 mt-0.5">{formatDate(data.deadline_date) || '—'}</p>
+                <p className="text-[12px] font-medium text-gray-900 mt-0.5">
+                  {latestTaskDeadline ? formatDate(latestTaskDeadline) : '—'}
+                </p>
+                {latestTaskDeadline && (
+                  <p className="text-[9px] text-gray-400 mt-0.5">dari task terpanjang</p>
+                )}
               </div>
             </div>
 
