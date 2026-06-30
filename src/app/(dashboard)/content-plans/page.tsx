@@ -24,7 +24,7 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS) as ContentStatus[];
 /* ── Helpers ── */
 function fmtDate(d: string | null) {
   if (!d) return null;
-  return format(new Date(d), 'dd MMM yyyy');
+  return new Date(d).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function getTypeMeta(ct: string | string[]) {
@@ -58,9 +58,7 @@ const STATUS_BTN: Record<string, string> = {
   draft:            'bg-gray-500 hover:bg-gray-600',
   pending_approval: 'bg-amber-500 hover:bg-amber-600',
   approved:         'bg-emerald-500 hover:bg-emerald-600',
-  in_production:    'bg-blue-500 hover:bg-blue-600',
-  submitted:        'bg-violet-500 hover:bg-violet-600',
-  done:             'bg-emerald-600 hover:bg-emerald-700',
+  pending_publish:  'bg-brand hover:bg-brand-dark',
   rejected:         'bg-red-500 hover:bg-red-600',
   published:        'bg-teal-500 hover:bg-teal-600',
 };
@@ -69,9 +67,7 @@ const STATUS_CAL: Record<string, string> = {
   draft:            'bg-gray-100 text-gray-600',
   pending_approval: 'bg-amber-100 text-amber-700',
   approved:         'bg-emerald-100 text-emerald-700',
-  in_production:    'bg-blue-100 text-blue-700',
-  submitted:        'bg-violet-100 text-violet-700',
-  done:             'bg-emerald-200 text-emerald-800',
+  pending_publish:  'bg-pink-100 text-pink-700',
   rejected:         'bg-red-100 text-red-600',
   published:        'bg-teal-100 text-teal-700',
 };
@@ -80,12 +76,17 @@ const STATUS_DOT: Record<string, string> = {
   draft:            '#A1A1AA',
   pending_approval: '#F59E0B',
   approved:         '#16A34A',
-  in_production:    '#2563EB',
-  submitted:        '#7C3AED',
-  done:             '#15803D',
+  pending_publish:  '#BB2649',
   rejected:         '#DC2626',
   published:        '#0D9488',
 };
+
+/* ── Task status colors (for task calendar) ── */
+const TASK_STATUS_COLOR = {
+  pending:   { bg: 'bg-gray-100',    text: 'text-gray-600',   dot: 'bg-gray-400',    label: 'Belum Dikerjakan' },
+  submitted: { bg: 'bg-amber-50',    text: 'text-amber-700',  dot: 'bg-amber-400',   label: 'Diajukan' },
+  done:      { bg: 'bg-emerald-50',  text: 'text-emerald-700',dot: 'bg-emerald-500', label: 'Selesai' },
+} as const;
 
 /* ── SVG icons ── */
 const IcoEye      = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
@@ -95,7 +96,6 @@ const IcoCheck    = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" 
 const IcoX        = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IcoUpload   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>;
 const IcoTrash    = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
-const IcoClipboard = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>;
 const IcoGlobe    = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
 
 /* ── ActionDropdown ── */
@@ -378,7 +378,7 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
               </span>
             </div>
             <span className={`text-[10px] font-semibold ${CHANNEL_COLOR[popover.channel]?.text ?? 'text-gray-500'}`}>
-              {format(new Date(popover.dateKey), 'dd MMM yyyy')}
+              {new Date(popover.dateKey + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           </div>
           {/* Plan list */}
@@ -400,6 +400,191 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
                 </svg>
               </Link>
             ))}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+/* ── Task Calendar View ── */
+type TaskWithPlan = ContentPlanTask & { planTitle: string; planId: string };
+
+function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [popover, setPopover] = useState<{ dateKey: string; tasks: TaskWithPlan[]; rect: DOMRect } | null>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd   = endOfMonth(currentMonth);
+  const calStart   = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calEnd     = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days       = eachDayOfInterval({ start: calStart, end: calEnd });
+
+  const allTasks = useMemo<TaskWithPlan[]>(() => {
+    const result: TaskWithPlan[] = [];
+    for (const plan of plans) {
+      for (const task of (plan.tasks ?? []) as ContentPlanTask[]) {
+        if (task.deadline) result.push({ ...task, planTitle: plan.title, planId: plan.id });
+      }
+    }
+    return result;
+  }, [plans]);
+
+  const tasksByDate = useMemo(() => {
+    const map = new Map<string, TaskWithPlan[]>();
+    for (const task of allTasks) {
+      const key = task.deadline.slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(task);
+    }
+    return map;
+  }, [allTasks]);
+
+  const monthLabel = `${MONTH_ID[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
+
+  useEffect(() => {
+    if (!popover) return;
+    function handler(e: MouseEvent) {
+      if (popoverRef.current?.contains(e.target as Node)) return;
+      setPopover(null);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [popover]);
+
+  const popoverStyle = useMemo((): React.CSSProperties => {
+    if (!popover) return {};
+    const { rect } = popover;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow > 240 ? rect.bottom + 6 : rect.top - 6;
+    const translateY = spaceBelow > 240 ? '0' : '-100%';
+    let left = rect.left;
+    if (left + 268 > window.innerWidth) left = window.innerWidth - 276;
+    return { position: 'fixed', top, left, transform: `translateY(${translateY})`, zIndex: 9999 };
+  }, [popover]);
+
+  return (
+    <div className="bg-white rounded-card border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <h2 className="text-[15px] font-bold text-gray-900">{monthLabel}</h2>
+        <div className="flex items-center gap-1">
+          <button onClick={() => { setCurrentMonth(m => subMonths(m, 1)); setPopover(null); }}
+            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button onClick={() => { setCurrentMonth(new Date()); setPopover(null); }}
+            className="px-3 h-8 text-[12px] font-medium rounded-md hover:bg-gray-100 text-gray-600 transition-colors">
+            Hari ini
+          </button>
+          <button onClick={() => { setCurrentMonth(m => addMonths(m, 1)); setPopover(null); }}
+            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50">
+        {DAY_LABELS.map(d => (
+          <div key={d} className="py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400">{d}</div>
+        ))}
+      </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-7 divide-x divide-gray-100">
+        {days.map((day, idx) => {
+          const key = format(day, 'yyyy-MM-dd');
+          const dayTasks = tasksByDate.get(key) ?? [];
+          const isToday = isSameDay(day, new Date());
+          const inMonth = isSameMonth(day, currentMonth);
+          const shown = dayTasks.slice(0, 3);
+          const extra = dayTasks.length - 3;
+
+          return (
+            <div key={idx} className={`min-h-[120px] p-2 border-b border-gray-100 ${!inMonth ? 'bg-gray-50/60' : ''}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] font-medium ${
+                  isToday ? 'bg-brand text-white font-bold' : inMonth ? 'text-gray-700' : 'text-gray-300'
+                }`}>
+                  {format(day, 'd')}
+                </div>
+                {dayTasks.length > 0 && (
+                  <span className="text-[9px] font-bold text-gray-400 leading-none">{dayTasks.length} task</span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-0.5">
+                {shown.map(task => {
+                  const c = TASK_STATUS_COLOR[task.status as keyof typeof TASK_STATUS_COLOR] ?? TASK_STATUS_COLOR.pending;
+                  return (
+                    <Link key={task.id} href={`/content-plans/${task.planId}`}
+                      className={`flex items-center gap-1 px-1.5 py-[3px] rounded text-[10px] font-medium w-full truncate hover:opacity-80 transition-opacity ${c.bg} ${c.text}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
+                      <span className="truncate">{task.name}</span>
+                    </Link>
+                  );
+                })}
+                {extra > 0 && (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setPopover(prev => prev?.dateKey === key ? null : { dateKey: key, tasks: dayTasks, rect });
+                    }}
+                    className="text-[10px] text-gray-400 hover:text-brand text-left px-1.5 py-[2px] transition-colors">
+                    +{extra} lainnya
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Status Task:</span>
+        {(Object.entries(TASK_STATUS_COLOR) as [string, typeof TASK_STATUS_COLOR[keyof typeof TASK_STATUS_COLOR]][]).map(([, c]) => (
+          <div key={c.label} className="flex items-center gap-1.5">
+            <div className={`w-2.5 h-2.5 rounded-sm ${c.dot}`} />
+            <span className="text-[10px] text-gray-600">{c.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Popover */}
+      {popover && typeof document !== 'undefined' && createPortal(
+        <div ref={popoverRef} style={popoverStyle}
+          className="w-64 bg-white rounded-card border border-gray-200 shadow-xl overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-gray-100 bg-gray-50">
+            <p className="text-[12px] font-semibold text-gray-800">
+              {new Date(popover.dateKey + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'long', year: 'numeric' })}
+            </p>
+            <p className="text-[10px] text-gray-400 mt-0.5">{popover.tasks.length} task deadline</p>
+          </div>
+          <div className="py-1 max-h-64 overflow-y-auto">
+            {popover.tasks.map(task => {
+              const c = TASK_STATUS_COLOR[task.status as keyof typeof TASK_STATUS_COLOR] ?? TASK_STATUS_COLOR.pending;
+              return (
+                <Link key={task.id} href={`/content-plans/${task.planId}`}
+                  onClick={() => setPopover(null)}
+                  className="flex items-start gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors group">
+                  <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${c.dot}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">{task.name}</p>
+                    <p className="text-[10px] text-gray-400 truncate mt-0.5">{task.planTitle}</p>
+                    {(task as TaskWithPlan & { pic?: string }).pic && (
+                      <p className="text-[10px] text-gray-400">PIC: {(task as TaskWithPlan & { pic?: string }).pic}</p>
+                    )}
+                  </div>
+                  <span className={`mt-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${c.bg} ${c.text}`}>{c.label}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>,
         document.body
@@ -735,7 +920,9 @@ type TeamFilter = 'all' | 'pending' | 'done' | 'late';
 function isTaskLate(task: TaskRow) {
   if (!task.deadline) return false;
   if (task.status === 'done') return false;
-  return new Date(task.deadline) < new Date(new Date().toDateString());
+  const todayJkt = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  todayJkt.setHours(0, 0, 0, 0);
+  return new Date(new Date(task.deadline).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })) < todayJkt;
 }
 
 /* ── TasksView ── */
@@ -1117,12 +1304,14 @@ export default function ContentPlansPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<PageTab>('plans');
+  const [calendarSubTab, setCalendarSubTab] = useState<'plans' | 'tasks'>('plans');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejectTargetStatus, setRejectTargetStatus] = useState<string>('pending_approval');
   const [rejectNotes, setRejectNotes] = useState('');
   const [publishWarnTasks, setPublishWarnTasks] = useState<{ id: string; name: string; status: string }[]>([]);
 
@@ -1138,7 +1327,7 @@ export default function ContentPlansPage() {
           creator:users!created_by(id, name),
           assignees:content_assignees(id, role, user:users(id, name)),
           submissions:content_submissions(id, status),
-          tasks:content_plan_tasks(id, name, deadline, status)
+          tasks:content_plan_tasks(id, name, deadline, status, pic)
         `)
         .order('created_at', { ascending: false });
 
@@ -1207,14 +1396,14 @@ export default function ContentPlansPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const publishMutation = useMutation({
+  const submitPublishMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/content-plans/${id}/publish`, { method: 'POST' });
       const body = await res.json();
       if (!res.ok) throw body;
     },
     onSuccess: () => {
-      toast.success('Plan berhasil dipublish!');
+      toast.success('Plan diajukan untuk publish!');
       queryClient.invalidateQueries({ queryKey: ['content-plans'] });
     },
     onError: (err: { message?: string; incomplete_tasks?: { id: string; name: string }[] }) => {
@@ -1223,9 +1412,21 @@ export default function ContentPlansPage() {
           err.incomplete_tasks.map(t => ({ id: t.id, name: t.name, status: 'pending' }))
         );
       } else {
-        toast.error(err.message ?? 'Gagal mempublish plan');
+        toast.error(err.message ?? 'Gagal mengajukan publish');
       }
     },
+  });
+
+  const approvePublishMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content-plans/${id}/approve-publish`, { method: 'POST' });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Gagal menyetujui publish'); }
+    },
+    onSuccess: () => {
+      toast.success('Plan berhasil dipublish!');
+      queryClient.invalidateQueries({ queryKey: ['content-plans'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const canCreate = user?.role === 'content_planner' || user?.role === 'admin';
@@ -1251,29 +1452,30 @@ export default function ContentPlansPage() {
     }
     if (canApprove && status === 'pending_approval') {
       items.push({ label: 'Setujui Plan', icon: IcoCheck, onClick: () => approveMutation.mutate(plan.id), dividerBefore: true });
-      items.push({ label: 'Tolak Plan', icon: IcoX, onClick: () => { setRejectTarget(plan.id); setRejectNotes(''); }, danger: true });
+      items.push({ label: 'Tolak Plan', icon: IcoX, onClick: () => { setRejectTarget(plan.id); setRejectTargetStatus('pending_approval'); setRejectNotes(''); }, danger: true });
     }
-    if (canManagePlan && status === 'submitted') {
-      items.push({ label: 'Review Submission', icon: IcoClipboard, onClick: () => router.push(`/content-plans/${plan.id}`), dividerBefore: true });
-    }
-    if (isCreative && isAssigned && status === 'in_production') {
+    if (isCreative && isAssigned && status === 'approved') {
       items.push({ label: 'Upload Hasil Kerja', icon: IcoUpload, onClick: () => router.push(`/content-plans/${plan.id}`), dividerBefore: true });
     }
-    if (canManagePlan && status === 'done') {
+    if (canManagePlan && status === 'approved') {
       const planTasks = (plan.tasks ?? []) as { id: string; name: string; deadline: string; status: string }[];
       const incompleteTasks = planTasks.filter(t => t.status !== 'done');
       items.push({
-        label: 'Publish',
+        label: 'Ajukan Publish',
         icon: IcoGlobe,
         dividerBefore: true,
         onClick: () => {
           if (incompleteTasks.length > 0) {
             setPublishWarnTasks(incompleteTasks.map(t => ({ id: t.id, name: t.name, status: t.status })));
           } else {
-            publishMutation.mutate(plan.id);
+            submitPublishMutation.mutate(plan.id);
           }
         },
       });
+    }
+    if (canApprove && status === 'pending_publish') {
+      items.push({ label: 'Setujui Publish', icon: IcoCheck, onClick: () => approvePublishMutation.mutate(plan.id), dividerBefore: true });
+      items.push({ label: 'Kembalikan ke Produksi', icon: IcoX, onClick: () => { setRejectTarget(plan.id); setRejectTargetStatus('pending_publish'); setRejectNotes(''); }, danger: true });
     }
     if (canManagePlan && status === 'draft') {
       items.push({ label: 'Hapus', icon: IcoTrash, onClick: () => setDeleteId(plan.id), danger: true, dividerBefore: true });
@@ -1453,9 +1655,40 @@ export default function ContentPlansPage() {
 
       {/* ══ TAB: Kalender Plan ══ */}
       {activeTab === 'calendar' && (
-        isLoading
-          ? <div className="bg-white rounded-card border border-gray-200 p-10 text-center text-[13px] text-gray-400">Memuat kalender...</div>
-          : <CalendarView plans={plans} />
+        <div className="space-y-4">
+          {/* Sub-tab toggle */}
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+            <button
+              type="button"
+              onClick={() => setCalendarSubTab('plans')}
+              className={`px-4 py-1.5 text-[12px] font-semibold rounded-md transition-colors ${
+                calendarSubTab === 'plans'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Jadwal Tayang
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalendarSubTab('tasks')}
+              className={`px-4 py-1.5 text-[12px] font-semibold rounded-md transition-colors ${
+                calendarSubTab === 'tasks'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Deadline Task
+            </button>
+          </div>
+
+          {isLoading
+            ? <div className="bg-white rounded-card border border-gray-200 p-10 text-center text-[13px] text-gray-400">Memuat kalender...</div>
+            : calendarSubTab === 'plans'
+              ? <CalendarView plans={plans} />
+              : <TaskCalendarView plans={plans} />
+          }
+        </div>
       )}
 
       {/* ══ TAB: Task ══ */}
@@ -1477,16 +1710,23 @@ export default function ContentPlansPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setRejectTarget(null)} />
           <div className="relative bg-white rounded-card shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-base font-semibold text-gray-900">Tolak Plan</h3>
+            <h3 className="text-base font-semibold text-gray-900">
+              {rejectTargetStatus === 'pending_publish' ? 'Kembalikan ke Produksi' : 'Tolak Plan'}
+            </h3>
+            <p className="text-[13px] text-gray-500">
+              {rejectTargetStatus === 'pending_publish'
+                ? 'Plan akan dikembalikan ke tahap produksi. Berikan catatan perbaikan.'
+                : 'Berikan catatan agar content planner bisa memperbaiki.'}
+            </p>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-1">
-                Alasan penolakan <span className="text-danger">*</span>
+                Catatan <span className="text-danger">*</span>
               </label>
               <textarea
                 value={rejectNotes}
                 onChange={e => setRejectNotes(e.target.value)}
                 rows={3}
-                placeholder="Tulis alasan penolakan..."
+                placeholder={rejectTargetStatus === 'pending_publish' ? 'Apa yang perlu diperbaiki...' : 'Tulis alasan penolakan...'}
                 className="w-full border border-gray-200 rounded-btn px-3 py-2 text-sm focus:outline-none focus:border-brand resize-none"
               />
             </div>
@@ -1497,7 +1737,7 @@ export default function ContentPlansPage() {
                 loading={rejectMutation.isPending}
                 onClick={() => rejectNotes.trim() && rejectMutation.mutate({ id: rejectTarget, notes: rejectNotes })}
               >
-                Tolak Plan
+                {rejectTargetStatus === 'pending_publish' ? 'Kembalikan' : 'Tolak Plan'}
               </Button>
             </div>
           </div>

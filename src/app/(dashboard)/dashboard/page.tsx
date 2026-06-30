@@ -8,10 +8,10 @@ import Link from 'next/link';
 import { ContentPlan } from '@/types';
 
 const KPI_CARDS = [
-  { key: 'draft',       label: 'Draft',             accent: '#A1A1AA' },
-  { key: 'pending',     label: 'Menunggu Approval',  accent: '#D97706' },
-  { key: 'inProduction',label: 'Dalam Produksi',     accent: '#2563EB' },
-  { key: 'done',        label: 'Selesai',            accent: '#16A34A' },
+  { key: 'draft',          label: 'Draft',              accent: '#A1A1AA' },
+  { key: 'pending',        label: 'Menunggu Approval',  accent: '#D97706' },
+  { key: 'approved',       label: 'Dalam Produksi',     accent: '#2563EB' },
+  { key: 'pendingPublish', label: 'Menunggu Publish',   accent: '#BB2649' },
 ] as const;
 
 export default function DashboardPage() {
@@ -31,10 +31,10 @@ export default function DashboardPage() {
   });
 
   const stats = {
-    draft:        plans.filter(p => p.status === 'draft').length,
-    pending:      plans.filter(p => p.status === 'pending_approval').length,
-    inProduction: plans.filter(p => p.status === 'in_production').length,
-    done:         plans.filter(p => p.status === 'done').length,
+    draft:          plans.filter(p => p.status === 'draft').length,
+    pending:        plans.filter(p => p.status === 'pending_approval').length,
+    approved:       plans.filter(p => p.status === 'approved').length,
+    pendingPublish: plans.filter(p => p.status === 'pending_publish').length,
   };
 
   return (

@@ -9,9 +9,7 @@ export type ContentStatus =
   | 'draft'
   | 'pending_approval'
   | 'approved'
-  | 'in_production'
-  | 'submitted'
-  | 'done'
+  | 'pending_publish'
   | 'rejected'
   | 'published';
 
@@ -32,6 +30,9 @@ export type NotificationType =
   | 'plan_submitted'
   | 'plan_approved'
   | 'plan_rejected'
+  | 'plan_publish_submitted'
+  | 'plan_publish_approved'
+  | 'plan_publish_rejected'
   | 'submission_received'
   | 'submission_approved'
   | 'submission_rejected'

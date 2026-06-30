@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const { data: plan } = await supabase
     .from('content_plans').select('title, created_by, status').eq('id', params.id).single();
 
-  if (!plan || !['approved', 'in_production'].includes(plan.status)) {
+  if (!plan || plan.status !== 'approved') {
     return NextResponse.json({ message: 'Plan belum dalam status produksi.' }, { status: 422 });
   }
 
@@ -57,11 +57,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     .single();
 
   if (error) return NextResponse.json({ message: error.message }, { status: 422 });
-
-  await supabase.from('content_plans')
-    .update({ status: 'in_production', updated_at: new Date().toISOString() })
-    .eq('id', params.id)
-    .eq('status', 'approved');
 
   await sendNotifications({
     userIds: [plan.created_by],

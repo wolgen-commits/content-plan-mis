@@ -14,7 +14,6 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
-import { format } from 'date-fns';
 
 /* ── WIB formatter ── */
 function fmtWIB(d: string | null | undefined): string | null {
@@ -223,7 +222,7 @@ const EMPTY_TASK = { name: '', deadline: '', pic: '', reference: '', description
 
 function fmtDate(d: string | null) {
   if (!d) return null;
-  return format(new Date(d), 'dd MMM yyyy');
+  return new Date(d).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export default function ContentPlanDetailPage({ params }: { params: { id: string } }) {
@@ -235,6 +234,8 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
   const [rejectionNotes, setRejectionNotes] = useState('');
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showPublishSubmitConfirm, setShowPublishSubmitConfirm] = useState(false);
+  const [showApprovePublishConfirm, setShowApprovePublishConfirm] = useState(false);
 
   // upload modal
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -307,8 +308,31 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rejection_notes: rejectionNotes }),
     }).then(r => r.json()),
-    onSuccess: () => { toast.success('Plan ditolak'); invalidate(); setShowRejectModal(false); },
-    onError: () => toast.error('Gagal tolak plan'),
+    onSuccess: (_, __, _ctx) => {
+      const isPublishReject = data?.status === 'pending_publish';
+      toast.success(isPublishReject ? 'Plan dikembalikan ke produksi' : 'Plan ditolak');
+      invalidate();
+      setShowRejectModal(false);
+    },
+    onError: () => toast.error('Gagal menolak'),
+  });
+
+  const submitPublishMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content-plans/${params.id}/publish`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw body;
+    },
+    onSuccess: () => { toast.success('Diajukan untuk publish!'); invalidate(); setShowPublishSubmitConfirm(false); },
+    onError: (err: { message?: string; incomplete_tasks?: { id: string; name: string }[] }) => {
+      toast.error(err.message ?? 'Gagal mengajukan publish');
+    },
+  });
+
+  const approvePublishMutation = useMutation({
+    mutationFn: () => fetch(`/api/content-plans/${params.id}/approve-publish`, { method: 'POST' }).then(r => r.json()),
+    onSuccess: () => { toast.success('Plan berhasil dipublish!'); invalidate(); setShowApprovePublishConfirm(false); },
+    onError: () => toast.error('Gagal menyetujui publish'),
   });
 
   /* ── Submission mutations ── */
@@ -452,6 +476,7 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
   const canManage    = isCreator || user?.role === 'admin';
   const tasks        = (data.tasks ?? []) as ContentPlanTask[];
   const doneCount    = tasks.filter(t => t.status === 'done').length;
+  const allTasksDone = tasks.every(t => t.status === 'done');
   const contentTypes = Array.isArray(data.content_type) ? data.content_type : [data.content_type];
   const channels     = Array.isArray(data.channel) ? data.channel : [data.channel];
 
@@ -493,7 +518,21 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
               <Button variant="danger" size="sm" onClick={() => setShowRejectModal(true)}>Tolak</Button>
             </>
           )}
-          {isCreative && isAssignee && ['approved', 'in_production'].includes(data.status) && (
+          {canManage && data.status === 'approved' && (
+            <Button size="sm"
+              disabled={!allTasksDone}
+              title={!allTasksDone ? 'Semua task harus selesai terlebih dahulu' : undefined}
+              onClick={() => setShowPublishSubmitConfirm(true)}>
+              Ajukan Publish
+            </Button>
+          )}
+          {isManager && data.status === 'pending_publish' && (
+            <>
+              <Button variant="success" size="sm" onClick={() => setShowApprovePublishConfirm(true)}>Setujui Publish</Button>
+              <Button variant="danger" size="sm" onClick={() => setShowRejectModal(true)}>Kembalikan</Button>
+            </>
+          )}
+          {isCreative && isAssignee && data.status === 'approved' && (
             <Button size="sm" onClick={() => setShowUploadModal(true)}>Upload Hasil</Button>
           )}
         </div>
@@ -664,7 +703,8 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
                     const isPic = task.pic_user_id === user?.id;
                     const canSubmitTask  = isPic && task.status === 'pending';
                     const canApproveTask = canManage && task.status === 'submitted';
-                    const isLate = task.deadline && task.status !== 'done' && new Date(task.deadline) < new Date(new Date().toDateString());
+                    const todayJkt = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })); todayJkt.setHours(0, 0, 0, 0);
+                    const isLate = task.deadline && task.status !== 'done' && new Date(new Date(task.deadline).toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })) < todayJkt;
 
                     const dropdownItems: TaskActionItem[] = [
                       {
@@ -873,7 +913,7 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
           )}
 
           {/* Upload button for creative */}
-          {isCreative && isAssignee && ['approved', 'in_production'].includes(data.status) && (
+          {isCreative && isAssignee && data.status === 'approved' && (
             <button
               type="button"
               onClick={() => setShowUploadModal(true)}
@@ -906,17 +946,38 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
         description="Kamu menyetujui content plan ini dan tim kreatif akan mulai produksi. Yakin?"
         confirmLabel="Setujui" />
 
-      <Modal open={showRejectModal} onClose={() => setShowRejectModal(false)} title="Tolak Content Plan"
+      <ConfirmModal open={showPublishSubmitConfirm} onClose={() => setShowPublishSubmitConfirm(false)}
+        onConfirm={() => submitPublishMutation.mutate()} loading={submitPublishMutation.isPending}
+        title="Ajukan untuk Publish"
+        description="Semua task sudah selesai. Plan akan dikirim ke manager untuk review dan persetujuan publish. Yakin?"
+        confirmLabel="Ajukan Publish" />
+
+      <ConfirmModal open={showApprovePublishConfirm} onClose={() => setShowApprovePublishConfirm(false)}
+        onConfirm={() => approvePublishMutation.mutate()} loading={approvePublishMutation.isPending}
+        title="Setujui Publish"
+        description="Kamu telah mereview konten dan hasil task. Plan ini akan berstatus Published. Yakin?"
+        confirmLabel="Setujui & Publish" />
+
+      <Modal
+        open={showRejectModal}
+        onClose={() => setShowRejectModal(false)}
+        title={data.status === 'pending_publish' ? 'Kembalikan ke Produksi' : 'Tolak Content Plan'}
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowRejectModal(false)}>Batal</Button>
-            <Button variant="danger" onClick={() => rejectPlanMutation.mutate()} loading={rejectPlanMutation.isPending}>Tolak Plan</Button>
+            <Button variant="danger" onClick={() => rejectPlanMutation.mutate()} loading={rejectPlanMutation.isPending}>
+              {data.status === 'pending_publish' ? 'Kembalikan' : 'Tolak Plan'}
+            </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Berikan catatan agar content planner bisa memperbaiki.</p>
-          <Textarea value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)} placeholder="Alasan penolakan..." rows={4} />
+          <p className="text-sm text-gray-600">
+            {data.status === 'pending_publish'
+              ? 'Plan akan dikembalikan ke tahap produksi. Berikan catatan perbaikan untuk planner.'
+              : 'Berikan catatan agar content planner bisa memperbaiki.'}
+          </p>
+          <Textarea value={rejectionNotes} onChange={e => setRejectionNotes(e.target.value)} placeholder="Catatan..." rows={4} />
         </div>
       </Modal>
 

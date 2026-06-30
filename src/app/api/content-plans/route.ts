@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       creator:users!created_by(id, name, avatar_url),
       assignees:content_assignees(id, role, user:users(id, name, avatar_url)),
       tags:content_tags(id, tag),
-      tasks:content_plan_tasks(id, name, deadline, pic, reference, description)
+      tasks:content_plan_tasks(id, name, deadline, pic, reference, description, status)
     `);
 
   if (view === 'calendar' && start && end) {

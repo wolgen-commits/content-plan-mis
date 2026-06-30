@@ -7,31 +7,37 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const JAKARTA_TZ = 'Asia/Jakarta';
+
+function toJakartaDate(date: string | Date): Date {
+  return new Date(new Date(date).toLocaleString('en-US', { timeZone: JAKARTA_TZ }));
+}
+
 export function formatDate(date: string | Date | null, fmt = 'dd MMM yyyy') {
   if (!date) return '-';
-  return format(new Date(date), fmt, { locale: id });
+  return format(toJakartaDate(date), fmt, { locale: id });
+}
+
+export function nowInJakarta(): Date {
+  return toJakartaDate(new Date());
 }
 
 export const STATUS_LABELS: Record<string, string> = {
-  draft: 'Draft',
+  draft:            'Draft',
   pending_approval: 'Menunggu Approval',
-  approved: 'Disetujui',
-  in_production: 'Dalam Produksi',
-  submitted: 'Submitted',
-  done: 'Selesai',
-  rejected: 'Ditolak',
-  published: 'Published',
+  approved:         'Disetujui',
+  pending_publish:  'Menunggu Publish',
+  rejected:         'Ditolak',
+  published:        'Published',
 };
 
 export const STATUS_COLORS: Record<string, string> = {
-  draft:           'bg-gray-100 text-gray-600',
-  pending_approval:'bg-warning-light text-warning',
-  approved:        'bg-info-light text-info',
-  in_production:   'bg-brand-light text-brand',
-  submitted:       'bg-brand-light text-brand',
-  done:            'bg-success-light text-success',
-  rejected:        'bg-danger-light text-danger',
-  published:       'bg-teal-100 text-teal-700',
+  draft:            'bg-gray-100 text-gray-600',
+  pending_approval: 'bg-warning-light text-warning',
+  approved:         'bg-info-light text-info',
+  pending_publish:  'bg-brand-light text-brand',
+  rejected:         'bg-danger-light text-danger',
+  published:        'bg-teal-100 text-teal-700',
 };
 
 export const CHANNEL_COLORS: Record<string, string> = {
