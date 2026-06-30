@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { ContentPlanEditModal } from '@/components/ui/ContentPlanEditModal';
 
 /* ── WIB formatter ── */
 function fmtWIB(d: string | null | undefined): string | null {
@@ -228,6 +229,9 @@ function fmtDate(d: string | null) {
 export default function ContentPlanDetailPage({ params }: { params: { id: string } }) {
   const user = useAuthStore(s => s.user);
   const queryClient = useQueryClient();
+
+  // edit modal
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // plan action modals
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -505,9 +509,7 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
 
         <div className="flex flex-shrink-0 gap-2">
           {canManage && ['draft', 'rejected'].includes(data.status) && (
-            <Link href={`/content-plans/${data.id}/edit`}>
-              <Button variant="secondary" size="sm">Edit</Button>
-            </Link>
+            <Button variant="secondary" size="sm" onClick={() => setShowEditModal(true)}>Edit</Button>
           )}
           {canManage && ['draft', 'rejected'].includes(data.status) && (
             <Button size="sm" onClick={() => setShowSubmitConfirm(true)}>Ajukan Persetujuan</Button>
@@ -930,6 +932,13 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
       </div>
 
       {/* ── Modals ── */}
+      <ContentPlanEditModal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        planId={params.id}
+        onSaved={invalidate}
+      />
+
       {historyTarget && (
         <TaskHistoryModal task={historyTarget} planTitle={data.title} onClose={() => setHistoryTarget(null)} />
       )}

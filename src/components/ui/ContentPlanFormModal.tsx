@@ -65,7 +65,7 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
   const [typeError, setTypeError] = useState('');
   const [channelError, setChannelError] = useState('');
 
-  const { register, control, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const { register, control, handleSubmit, reset, formState: { errors, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { references: [] },
   });
@@ -195,9 +195,11 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
 
   if (!open) return null;
 
+  const hasData = isDirty || selectedTypes.length > 0 || selectedChannels.length > 0 || tasks.length > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" onClick={hasData ? undefined : onClose} />
 
       <div
         className="relative bg-white rounded-card shadow-2xl flex flex-col"

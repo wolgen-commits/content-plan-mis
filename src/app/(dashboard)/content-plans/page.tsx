@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmModal } from '@/components/ui/Modal';
 import { ContentPlanFormModal } from '@/components/ui/ContentPlanFormModal';
+import { ContentPlanEditModal } from '@/components/ui/ContentPlanEditModal';
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths,
@@ -1310,6 +1311,7 @@ export default function ContentPlansPage() {
   const [channelFilter, setChannelFilter] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editPlanId, setEditPlanId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
   const [rejectTargetStatus, setRejectTargetStatus] = useState<string>('pending_approval');
   const [rejectNotes, setRejectNotes] = useState('');
@@ -1323,7 +1325,7 @@ export default function ContentPlansPage() {
         .from('content_plans')
         .select(`
           id, title, content_type, channel, status, scheduled_date, deadline_date,
-          topic, caption, created_by, created_at,
+          topic, caption, platform, created_by, created_at,
           creator:users!created_by(id, name),
           assignees:content_assignees(id, role, user:users(id, name)),
           submissions:content_submissions(id, status),
@@ -1445,7 +1447,7 @@ export default function ContentPlansPage() {
     items.push({ label: 'Detail', icon: IcoEye, onClick: () => router.push(`/content-plans/${plan.id}`) });
 
     if (canManagePlan && (status === 'draft' || status === 'rejected')) {
-      items.push({ label: 'Edit', icon: IcoEdit, onClick: () => router.push(`/content-plans/${plan.id}/edit`) });
+      items.push({ label: 'Edit', icon: IcoEdit, onClick: () => setEditPlanId(plan.id) });
     }
     if (canManagePlan && (status === 'draft' || status === 'rejected')) {
       items.push({ label: 'Ajukan untuk Persetujuan', icon: IcoSend, onClick: () => submitMutation.mutate(plan.id), dividerBefore: true });
@@ -1579,6 +1581,7 @@ export default function ContentPlansPage() {
                     <TH>Aksi</TH>
                     <TH>Tgl Dibuat</TH>
                     <TH>Tanggal Tayang</TH>
+                    <TH>Perusahaan</TH>
                     <TH>Tipe</TH>
                     <TH wide>Judul</TH>
                     <TH>Penjelasan</TH>
@@ -1610,6 +1613,11 @@ export default function ContentPlansPage() {
                           <div className="text-[12px] font-medium text-gray-800">
                             {fmtDate(plan.scheduled_date) ?? <span className="text-gray-300">—</span>}
                           </div>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {plan.platform
+                            ? <span className="text-[12px] font-medium text-gray-700">{plan.platform}</span>
+                            : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2.5">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${typeMeta.color}`}>
@@ -1803,6 +1811,13 @@ export default function ContentPlansPage() {
       <ContentPlanFormModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+      />
+
+      <ContentPlanEditModal
+        open={!!editPlanId}
+        onClose={() => setEditPlanId(null)}
+        planId={editPlanId ?? ''}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['content-plans'] })}
       />
     </div>
   );
