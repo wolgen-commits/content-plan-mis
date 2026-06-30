@@ -169,6 +169,11 @@ function TH({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
 const DAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 const MONTH_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
+const COMPANY_COLOR: Record<string, { border: string; dot: string; badgeBg: string; badgeText: string; btnActive: string }> = {
+  Magenta: { border: '#BB2649', dot: 'bg-brand',    badgeBg: 'bg-brand-light',  badgeText: 'text-brand',    btnActive: 'bg-brand text-white border-brand' },
+  Putrama: { border: '#3B82F6', dot: 'bg-blue-500', badgeBg: 'bg-blue-50',     badgeText: 'text-blue-600', btnActive: 'bg-blue-500 text-white border-blue-500' },
+};
+
 const CHANNEL_COLOR: Record<string, { bg: string; text: string; dot: string }> = {
   Instagram: { bg: 'bg-pink-100',   text: 'text-pink-700',   dot: 'bg-pink-400' },
   TikTok:    { bg: 'bg-gray-900',   text: 'text-white',      dot: 'bg-gray-400' },
@@ -187,7 +192,10 @@ interface CalPopover {
 function CalendarView({ plans }: { plans: ContentPlan[] }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [popover, setPopover] = useState<CalPopover | null>(null);
+  const [companyFilter, setCompanyFilter] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
+
+  const filteredPlans = companyFilter ? plans.filter(p => p.company === companyFilter) : plans;
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd   = endOfMonth(currentMonth);
@@ -198,7 +206,7 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
   // plansByDate: date key → list of plans
   const plansByDate = useMemo(() => {
     const map = new Map<string, ContentPlan[]>();
-    for (const plan of plans) {
+    for (const plan of filteredPlans) {
       if (!plan.scheduled_date) continue;
       const key = format(new Date(plan.scheduled_date), 'yyyy-MM-dd');
       if (!map.has(key)) map.set(key, []);
@@ -210,7 +218,7 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
   // channelsByDate: date key → { channel → plans[] }
   const channelsByDate = useMemo(() => {
     const map = new Map<string, Map<string, ContentPlan[]>>();
-    plansByDate.forEach((dayPlans, dateKey) => {
+    plansByDate.forEach((dayPlans: ContentPlan[], dateKey: string) => {
       const channelMap = new Map<string, ContentPlan[]>();
       dayPlans.forEach(plan => {
         const channels = Array.isArray(plan.channel) ? plan.channel : (plan.channel ? [plan.channel] : []);
@@ -270,8 +278,22 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
   return (
     <div className="bg-white rounded-card border border-gray-200 overflow-hidden">
       {/* Calendar header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h2 className="text-[15px] font-bold text-gray-900">{monthLabel}</h2>
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <h2 className="text-[15px] font-bold text-gray-900">{monthLabel}</h2>
+          <div className="flex items-center gap-1.5">
+            {(['', 'Magenta', 'Putrama'] as const).map(c => (
+              <button key={c || 'all'} type="button" onClick={() => { setCompanyFilter(c); setPopover(null); }}
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                  companyFilter === c
+                    ? (c ? COMPANY_COLOR[c].btnActive : 'bg-gray-700 text-white border-gray-700')
+                    : 'text-gray-500 border-gray-200 hover:border-gray-400 bg-white'
+                }`}>
+                {c || 'Semua'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={() => { setCurrentMonth(m => subMonths(m, 1)); setPopover(null); }}
             className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
@@ -351,20 +373,30 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
       </div>
 
       {/* Legend */}
-      {activeChannels.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Channel:</span>
-          {activeChannels.map(ch => {
-            const c = CHANNEL_COLOR[ch] ?? { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
-            return (
-              <div key={ch} className="flex items-center gap-1.5">
-                <div className={`w-2.5 h-2.5 rounded-sm ${c.dot}`} />
-                <span className="text-[10px] text-gray-600">{ch}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+        {activeChannels.length > 0 && (
+          <>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Channel:</span>
+            {activeChannels.map(ch => {
+              const c = CHANNEL_COLOR[ch] ?? { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
+              return (
+                <div key={ch} className="flex items-center gap-1.5">
+                  <div className={`w-2.5 h-2.5 rounded-sm ${c.dot}`} />
+                  <span className="text-[10px] text-gray-600">{ch}</span>
+                </div>
+              );
+            })}
+            <span className="text-gray-200">|</span>
+          </>
+        )}
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Perusahaan:</span>
+        {Object.entries(COMPANY_COLOR).map(([name, c]) => (
+          <div key={name} className="flex items-center gap-1.5">
+            <div className={`w-2.5 h-2.5 rounded-sm ${c.dot}`} />
+            <span className="text-[10px] text-gray-600">{name}</span>
+          </div>
+        ))}
+      </div>
 
       {/* Channel popover */}
       {popover && typeof document !== 'undefined' && createPortal(
@@ -384,23 +416,33 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
           </div>
           {/* Plan list */}
           <div className="py-1 max-h-56 overflow-y-auto">
-            {popover.plans.map(plan => (
-              <Link key={plan.id} href={`/content-plans/${plan.id}`}
-                onClick={() => setPopover(null)}
-                className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group">
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STATUS_CAL[plan.status] ? '' : 'bg-gray-300'}`}
-                  style={{ background: STATUS_DOT[plan.status] ?? '#A1A1AA' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">
-                    {plan.title}
-                  </p>
-                  <p className="text-[10px] text-gray-400">{STATUS_LABELS[plan.status as ContentStatus] ?? plan.status}</p>
-                </div>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 group-hover:text-brand flex-shrink-0">
-                  <polyline points="9 18 15 12 9 6"/>
-                </svg>
-              </Link>
-            ))}
+            {popover.plans.map(plan => {
+              const co = plan.company ? COMPANY_COLOR[plan.company] : null;
+              return (
+                <Link key={plan.id} href={`/content-plans/${plan.id}`}
+                  onClick={() => setPopover(null)}
+                  className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group">
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ background: STATUS_DOT[plan.status] ?? '#A1A1AA' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">
+                      {plan.title}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-[10px] text-gray-400">{STATUS_LABELS[plan.status as ContentStatus] ?? plan.status}</p>
+                      {co && (
+                        <span className={`text-[9px] font-bold px-1.5 py-px rounded-full ${co.badgeBg} ${co.badgeText}`}>
+                          {plan.company}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 group-hover:text-brand flex-shrink-0">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </Link>
+              );
+            })}
           </div>
         </div>,
         document.body
@@ -410,11 +452,12 @@ function CalendarView({ plans }: { plans: ContentPlan[] }) {
 }
 
 /* ── Task Calendar View ── */
-type TaskWithPlan = ContentPlanTask & { planTitle: string; planId: string };
+type TaskWithPlan = ContentPlanTask & { planTitle: string; planId: string; company: string | null };
 
 function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [popover, setPopover] = useState<{ dateKey: string; tasks: TaskWithPlan[]; rect: DOMRect } | null>(null);
+  const [companyFilter, setCompanyFilter] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const monthStart = startOfMonth(currentMonth);
@@ -426,12 +469,13 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
   const allTasks = useMemo<TaskWithPlan[]>(() => {
     const result: TaskWithPlan[] = [];
     for (const plan of plans) {
+      if (companyFilter && plan.company !== companyFilter) continue;
       for (const task of (plan.tasks ?? []) as ContentPlanTask[]) {
-        if (task.deadline) result.push({ ...task, planTitle: plan.title, planId: plan.id });
+        if (task.deadline) result.push({ ...task, planTitle: plan.title, planId: plan.id, company: plan.company ?? null });
       }
     }
     return result;
-  }, [plans]);
+  }, [plans, companyFilter]);
 
   const tasksByDate = useMemo(() => {
     const map = new Map<string, TaskWithPlan[]>();
@@ -470,7 +514,22 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
     <div className="bg-white rounded-card border border-gray-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h2 className="text-[15px] font-bold text-gray-900">{monthLabel}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-[15px] font-bold text-gray-900">{monthLabel}</h2>
+          {/* Company filter pills */}
+          <div className="flex items-center gap-1">
+            {['', 'Magenta', 'Putrama'].map(c => (
+              <button key={c || 'all'} type="button" onClick={() => { setCompanyFilter(c); setPopover(null); }}
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                  companyFilter === c
+                    ? (c ? COMPANY_COLOR[c].btnActive : 'bg-gray-700 text-white border-gray-700')
+                    : 'text-gray-500 border-gray-200 hover:border-gray-400 bg-white'
+                }`}>
+                {c || 'Semua'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={() => { setCurrentMonth(m => subMonths(m, 1)); setPopover(null); }}
             className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
@@ -520,9 +579,11 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
               <div className="flex flex-col gap-0.5">
                 {shown.map(task => {
                   const c = TASK_STATUS_COLOR[task.status as keyof typeof TASK_STATUS_COLOR] ?? TASK_STATUS_COLOR.pending;
+                  const companyBorder = task.company ? COMPANY_COLOR[task.company]?.border : undefined;
                   return (
                     <Link key={task.id} href={`/content-plans/${task.planId}`}
-                      className={`flex items-center gap-1 px-1.5 py-[3px] rounded text-[10px] font-medium w-full truncate hover:opacity-80 transition-opacity ${c.bg} ${c.text}`}>
+                      style={companyBorder ? { borderLeft: `3px solid ${companyBorder}` } : undefined}
+                      className={`flex items-center gap-1 pl-1.5 pr-1 py-[3px] rounded text-[10px] font-medium w-full truncate hover:opacity-80 transition-opacity ${c.bg} ${c.text}`}>
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
                       <span className="truncate">{task.name}</span>
                     </Link>
@@ -555,6 +616,13 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
             <span className="text-[10px] text-gray-600">{c.label}</span>
           </div>
         ))}
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider ml-2">Perusahaan:</span>
+        {Object.entries(COMPANY_COLOR).map(([name, c]) => (
+          <div key={name} className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: c.border }} />
+            <span className="text-[10px] text-gray-600">{name}</span>
+          </div>
+        ))}
       </div>
 
       {/* Popover */}
@@ -570,6 +638,7 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
           <div className="py-1 max-h-64 overflow-y-auto">
             {popover.tasks.map(task => {
               const c = TASK_STATUS_COLOR[task.status as keyof typeof TASK_STATUS_COLOR] ?? TASK_STATUS_COLOR.pending;
+              const co = task.company ? COMPANY_COLOR[task.company] : null;
               return (
                 <Link key={task.id} href={`/content-plans/${task.planId}`}
                   onClick={() => setPopover(null)}
@@ -577,7 +646,12 @@ function TaskCalendarView({ plans }: { plans: ContentPlan[] }) {
                   <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${c.dot}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-medium text-gray-800 truncate group-hover:text-brand">{task.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate mt-0.5">{task.planTitle}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-[10px] text-gray-400 truncate">{task.planTitle}</p>
+                      {co && (
+                        <span className={`text-[9px] font-semibold px-1 py-0.5 rounded flex-shrink-0 ${co.badgeBg} ${co.badgeText}`}>{task.company}</span>
+                      )}
+                    </div>
                     {(task as TaskWithPlan & { pic?: string }).pic && (
                       <p className="text-[10px] text-gray-400">PIC: {(task as TaskWithPlan & { pic?: string }).pic}</p>
                     )}
