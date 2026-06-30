@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -51,6 +51,46 @@ function Err({ msg }: { msg?: string }) {
   return <p className="text-danger text-[10px] mt-0.5 leading-none">{msg}</p>;
 }
 
+interface ImageStripProps {
+  images: { url: string; name: string }[];
+  uploading: boolean;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (i: number) => void;
+}
+function VisualBriefImageStrip({ images, uploading, onUpload, onRemove }: ImageStripProps) {
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {images.map((img, i) => (
+        <div key={i} className="relative group w-16 h-16 rounded-md overflow-hidden border border-gray-200 flex-shrink-0">
+          <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+          <button
+            type="button"
+            onClick={() => onRemove(i)}
+            className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          >×</button>
+        </div>
+      ))}
+      <label className={`w-16 h-16 flex flex-col items-center justify-center border-2 border-dashed rounded-md flex-shrink-0 transition-colors cursor-pointer ${
+        uploading ? 'border-brand/40 bg-brand/5 cursor-wait' : 'border-gray-300 hover:border-brand hover:bg-brand/5'
+      }`}>
+        {uploading ? (
+          <svg className="animate-spin text-brand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        ) : (
+          <>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <span className="text-[9px] text-gray-400 mt-0.5">Gambar</span>
+          </>
+        )}
+        <input type="file" accept="image/*" multiple className="hidden" disabled={uploading} onChange={onUpload} />
+      </label>
+    </div>
+  );
+}
+
 const EMPTY_TASK = { name: '', deadline: '', pic: '', pic_user_id: '', reference: '', description: '' };
 
 /* ── Main component ── */
@@ -64,6 +104,9 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [typeError, setTypeError] = useState('');
   const [channelError, setChannelError] = useState('');
+  const [visualBriefImages, setVisualBriefImages] = useState<{ url: string; name: string }[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
+  const folderId = useRef(crypto.randomUUID());
 
   const { register, control, handleSubmit, reset, formState: { errors, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -121,7 +164,33 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
     setSelectedChannels([]);
     setTypeError('');
     setChannelError('');
+    setVisualBriefImages([]);
     setActiveTab('info');
+    folderId.current = crypto.randomUUID();
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setImageUploading(true);
+    try {
+      for (const file of files) {
+        const res = await fetch('/api/storage/visual-brief-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder_id: folderId.current, file_name: file.name, content_type: file.type }),
+        });
+        if (!res.ok) throw new Error('Gagal mendapatkan URL upload');
+        const { signed_url, public_url } = await res.json();
+        await fetch(signed_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        setVisualBriefImages(prev => [...prev, { url: public_url, name: file.name }]);
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setImageUploading(false);
+      e.target.value = '';
+    }
   }
 
   function toggleType(type: string) {
@@ -163,7 +232,9 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
       content_type: selectedTypes,
       channel: selectedChannels,
       topic: values.topic || null, material: values.material || null,
-      visual_brief: values.visual_brief || null, caption: values.caption || null,
+      visual_brief: values.visual_brief || null,
+      visual_brief_images: visualBriefImages.length ? visualBriefImages : null,
+      caption: values.caption || null,
       scheduled_date: values.scheduled_date || null,
       tags, references,
       tasks: tasks.map(t => ({
@@ -195,7 +266,7 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
 
   if (!open) return null;
 
-  const hasData = isDirty || selectedTypes.length > 0 || selectedChannels.length > 0 || tasks.length > 0;
+  const hasData = isDirty || selectedTypes.length > 0 || selectedChannels.length > 0 || tasks.length > 0 || visualBriefImages.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -325,6 +396,14 @@ export function ContentPlanFormModal({ open, onClose, onCreated }: Props) {
 
                 <span className={`${LBL} self-start pt-[9px]`}>Visual Brief</span>
                 <Textarea {...register('visual_brief')} placeholder="Arahan visual untuk desainer/videografer..." rows={2} />
+
+                <span />
+                <VisualBriefImageStrip
+                  images={visualBriefImages}
+                  uploading={imageUploading}
+                  onUpload={handleImageUpload}
+                  onRemove={i => setVisualBriefImages(prev => prev.filter((_, idx) => idx !== i))}
+                />
 
                 <span className={`${LBL} self-start pt-[9px]`}>Caption</span>
                 <Textarea {...register('caption')} placeholder="Draft caption..." rows={2} />

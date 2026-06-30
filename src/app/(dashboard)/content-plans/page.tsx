@@ -1309,6 +1309,7 @@ export default function ContentPlansPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editPlanId, setEditPlanId] = useState<string | null>(null);
@@ -1318,14 +1319,14 @@ export default function ContentPlansPage() {
   const [publishWarnTasks, setPublishWarnTasks] = useState<{ id: string; name: string; status: string }[]>([]);
 
   const { data: plans = [], isLoading } = useQuery({
-    queryKey: ['content-plans', { search, status: statusFilter, channel: channelFilter }],
+    queryKey: ['content-plans', { search, status: statusFilter, channel: channelFilter, company: companyFilter }],
     queryFn: async () => {
       const supabase = getSupabaseBrowser();
       let query = supabase
         .from('content_plans')
         .select(`
           id, title, content_type, channel, status, scheduled_date, deadline_date,
-          topic, caption, platform, created_by, created_at,
+          topic, caption, company, created_by, created_at,
           creator:users!created_by(id, name),
           assignees:content_assignees(id, role, user:users(id, name)),
           submissions:content_submissions(id, status),
@@ -1335,6 +1336,7 @@ export default function ContentPlansPage() {
 
       if (statusFilter) query = query.eq('status', statusFilter);
       if (channelFilter) query = query.eq('channel', channelFilter);
+      if (companyFilter) query = query.eq('company', companyFilter);
       if (search) query = query.ilike('title', `%${search}%`);
 
       const { data } = await query;
@@ -1551,9 +1553,18 @@ export default function ContentPlansPage() {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            {(search || statusFilter || channelFilter) && (
+            <select
+              value={companyFilter}
+              onChange={e => setCompanyFilter(e.target.value)}
+              className="border border-gray-200 rounded-btn px-3 py-1.5 text-[13px] focus:outline-none focus:border-brand bg-white text-gray-700"
+            >
+              <option value="">Semua Perusahaan</option>
+              <option value="Magenta">Magenta</option>
+              <option value="Putrama">Putrama</option>
+            </select>
+            {(search || statusFilter || channelFilter || companyFilter) && (
               <button
-                onClick={() => { setSearch(''); setStatusFilter(''); setChannelFilter(''); }}
+                onClick={() => { setSearch(''); setStatusFilter(''); setChannelFilter(''); setCompanyFilter(''); }}
                 className="text-[12px] text-gray-400 hover:text-gray-600 px-2 transition-colors"
               >
                 Reset
@@ -1615,8 +1626,8 @@ export default function ContentPlansPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          {plan.platform
-                            ? <span className="text-[12px] font-medium text-gray-700">{plan.platform}</span>
+                          {plan.company
+                            ? <span className="text-[12px] font-medium text-gray-700">{plan.company}</span>
                             : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2.5">

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ import { ContentPlan } from '@/types';
 /* ── Schema ── */
 const schema = z.object({
   title:          z.string().min(1, 'Judul wajib diisi'),
-  platform:       z.string().optional(),
+  company:       z.string().optional(),
   topic:          z.string().optional(),
   material:       z.string().optional(),
   visual_brief:   z.string().optional(),
@@ -56,6 +56,47 @@ function Err({ msg }: { msg?: string }) {
   if (!msg) return null;
   return <p className="text-danger text-[10px] mt-0.5 leading-none">{msg}</p>;
 }
+
+interface ImageStripProps {
+  images: { url: string; name: string }[];
+  uploading: boolean;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (i: number) => void;
+}
+function VisualBriefImageStrip({ images, uploading, onUpload, onRemove }: ImageStripProps) {
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {images.map((img, i) => (
+        <div key={i} className="relative group w-16 h-16 rounded-md overflow-hidden border border-gray-200 flex-shrink-0">
+          <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+          <button
+            type="button"
+            onClick={() => onRemove(i)}
+            className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          >×</button>
+        </div>
+      ))}
+      <label className={`w-16 h-16 flex flex-col items-center justify-center border-2 border-dashed rounded-md flex-shrink-0 transition-colors cursor-pointer ${
+        uploading ? 'border-brand/40 bg-brand/5 cursor-wait' : 'border-gray-300 hover:border-brand hover:bg-brand/5'
+      }`}>
+        {uploading ? (
+          <svg className="animate-spin text-brand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        ) : (
+          <>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <span className="text-[9px] text-gray-400 mt-0.5">Gambar</span>
+          </>
+        )}
+        <input type="file" accept="image/*" multiple className="hidden" disabled={uploading} onChange={onUpload} />
+      </label>
+    </div>
+  );
+}
+
 const EMPTY_TASK = { name: '', deadline: '', pic: '', pic_user_id: '', reference: '', description: '' };
 
 /* ── Main component ── */
@@ -70,6 +111,9 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
   const [deletedTaskIds, setDeletedTaskIds] = useState<Set<string>>(new Set());
   const [newTask, setNewTask]               = useState(EMPTY_TASK);
   const [taskErrors, setTaskErrors]         = useState({ name: '', deadline: '' });
+  const [visualBriefImages, setVisualBriefImages] = useState<{ url: string; name: string }[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
+  const folderId = useRef('');
 
   const { register, control, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -118,7 +162,7 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
     setSelectedChannels(channels as string[]);
     reset({
       title:          p.title,
-      platform:       p.platform ?? '',
+      company:       p.company ?? '',
       topic:          p.topic ?? '',
       material:       p.material ?? '',
       visual_brief:   p.visual_brief ?? '',
@@ -132,6 +176,8 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
     const existingTasks = ((p.tasks ?? []) as PlanTask[]).map(t => ({ ...t, isExisting: true }));
     setTasks(existingTasks);
     setDeletedTaskIds(new Set());
+    setVisualBriefImages(p.visual_brief_images ?? []);
+    folderId.current = p.id;
   }, [reset]);
 
   useEffect(() => {
@@ -195,6 +241,30 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
     onError: (err: Error) => toast.error(err.message),
   });
 
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setImageUploading(true);
+    try {
+      for (const file of files) {
+        const res = await fetch('/api/storage/visual-brief-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder_id: folderId.current || planId, file_name: file.name, content_type: file.type }),
+        });
+        if (!res.ok) throw new Error('Gagal mendapatkan URL upload');
+        const { signed_url, public_url } = await res.json();
+        await fetch(signed_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        setVisualBriefImages(prev => [...prev, { url: public_url, name: file.name }]);
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setImageUploading(false);
+      e.target.value = '';
+    }
+  }
+
   function toggleType(type: string) {
     const next = selectedTypes.includes(type)
       ? selectedTypes.filter(t => t !== type)
@@ -240,13 +310,14 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
     const references = (values.references ?? []).filter(r => r.url.trim());
     mutation.mutate({
       title:          values.title,
-      platform:       values.platform || null,
+      company:       values.company || null,
       content_type:   selectedTypes,
       channel:        selectedChannels,
       topic:          values.topic || null,
       material:       values.material || null,
-      visual_brief:   values.visual_brief || null,
-      caption:        values.caption || null,
+      visual_brief:        values.visual_brief || null,
+      visual_brief_images: visualBriefImages.length ? visualBriefImages : null,
+      caption:             values.caption || null,
       scheduled_date: values.scheduled_date || null,
       deadline_date:  values.deadline_date || null,
       work_order:     values.work_order || null,
@@ -321,7 +392,7 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
                     </div>
 
                     <span className={LBL}>Perusahaan</span>
-                    <Select {...register('platform')}>
+                    <Select {...register('company')}>
                       <option value="">Pilih...</option>
                       <option value="Magenta">Magenta</option>
                       <option value="Putrama">Putrama</option>
@@ -389,6 +460,14 @@ export function ContentPlanEditModal({ open, onClose, planId, onSaved }: Props) 
 
                     <span className={`${LBL} self-start pt-[9px]`}>Visual Brief</span>
                     <Textarea {...register('visual_brief')} placeholder="Arahan visual untuk desainer/videografer..." rows={2} />
+
+                    <span />
+                    <VisualBriefImageStrip
+                      images={visualBriefImages}
+                      uploading={imageUploading}
+                      onUpload={handleImageUpload}
+                      onRemove={i => setVisualBriefImages(prev => prev.filter((_, idx) => idx !== i))}
+                    />
 
                     <span className={`${LBL} self-start pt-[9px]`}>Caption</span>
                     <Textarea {...register('caption')} placeholder="Draft caption..." rows={2} />

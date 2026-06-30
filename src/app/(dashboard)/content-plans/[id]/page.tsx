@@ -570,10 +570,27 @@ export default function ContentPlanDetailPage({ params }: { params: { id: string
                   <p className="text-[13px] text-gray-700 whitespace-pre-wrap">{data.material}</p>
                 </div>
               )}
-              {data.visual_brief && (
-                <div>
-                  <p className="text-[10px] font-medium text-gray-400 mb-0.5">Visual Brief</p>
-                  <p className="text-[13px] text-gray-700 whitespace-pre-wrap">{data.visual_brief}</p>
+              {(data.visual_brief || (data.visual_brief_images && data.visual_brief_images.length > 0)) && (
+                <div className="col-span-2">
+                  <p className="text-[10px] font-medium text-gray-400 mb-1">Visual Brief</p>
+                  {data.visual_brief && (
+                    <p className="text-[13px] text-gray-700 whitespace-pre-wrap mb-2">{data.visual_brief}</p>
+                  )}
+                  {data.visual_brief_images && data.visual_brief_images.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {data.visual_brief_images.map((img, i) => (
+                        <a key={i} href={img.url} target="_blank" rel="noopener noreferrer"
+                          className="block w-20 h-20 rounded-md overflow-hidden border border-gray-200 hover:border-brand transition-colors flex-shrink-0 group relative">
+                          <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                            <svg className="text-white opacity-0 group-hover:opacity-100 transition-opacity" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                            </svg>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {data.caption && (

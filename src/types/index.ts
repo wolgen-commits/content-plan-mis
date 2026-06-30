@@ -92,13 +92,14 @@ export interface ContentSubmission {
 
 export interface ContentPlan {
   id: string;
-  platform: string | null;
+  company: string | null;
   title: string;
   content_type: ContentType[];
   channel: Channel[];
   topic: string | null;
   material: string | null;
   visual_brief: string | null;
+  visual_brief_images: { url: string; name: string }[] | null;
   caption: string | null;
   scheduled_date: string | null;
   deadline_date: string | null;
